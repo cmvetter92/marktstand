@@ -112,6 +112,12 @@ input.num-in.bad{border-color:var(--danger);background:#fdf0ee;outline-color:var
 .sub.quiet{color:var(--muted)}
 .sub.tag{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--accent);background:var(--accent-soft);padding:1px 6px;border-radius:6px;margin-left:6px;vertical-align:2px}
 .qty.big{font-size:18px;min-width:28px;text-align:right}
+.stepper{display:flex;align-items:center;gap:2px;flex:none}
+.sbtn{width:36px;height:36px;border-radius:10px;background:var(--bg);font-size:20px;font-weight:700;line-height:1}
+.sbtn[disabled]{opacity:.35}
+.sval{min-width:30px;text-align:center;font-weight:700;font-size:18px}
+.stepper.on .sval{color:var(--muted)}
+.check.on .lbl .warn{display:inline-block;text-decoration:none}
 .pen{font-size:12px;color:var(--muted);margin-left:4px;display:inline-block}
 .subhead{font-weight:700;font-size:14px;padding:6px 0 4px}
 .stepper{display:flex;align-items:center;gap:6px}
@@ -255,7 +261,7 @@ const WD = ["So","Mo","Di","Mi","Do","Fr","Sa"];
 /* ---------- Zustand ---------- */
 const S = { gear:{}, items:{}, days:{}, orders:{}, equipment:{}, config:{}, weather:{}, shifts:{}, team:{}, ready:false, err:null, slow:false };
 let db = null;
-const ui = { sub:null, lastActive:{}, scrollTo:null, editPack:null, tab:"og", date:todayStr(), open:{}, counting:null, recv:{}, delArm:null, newProd:{ hut:{ og:false, mm:false } } };
+const ui = { sub:null, lastActive:{}, scrollTo:null, editPack:null, draft:{}, tab:"og", date:todayStr(), open:{}, counting:null, recv:{}, delArm:null, newProd:{ hut:{ og:false, mm:false } } };
 
 /* ---------- Hilfen ---------- */
 // Arbeitstag wechselt erst um 5 Uhr, damit Einträge nach Mitternacht noch zum Markttag zählen
@@ -314,6 +320,9 @@ function bestandLimit(item,hut){ const s=item.soll&&item.soll[hut]; if(!s) retur
 function implausible(item,hut,doc){ const v=doc.bestand&&doc.bestand[item.key]; if(v==null) return false; const lim=bestandLimit(item,hut); return lim>0&&v>lim&&!(doc.bestandOk&&doc.bestandOk[item.key]===v); }
 function overdue(o){ return o.status==="open"&&o.date&&o.date<addDays(todayStr(),-1); }
 function packedQty(hut,date,key){ const p=dayDoc(hut,date).pack; const e=p&&p[key]; return e&&Number(e.qty)>0?Number(e.qty):0; }
+function isPacked(hut,date,key){ const p=dayDoc(hut,date).pack; const e=p&&p[key]; return !!e&&(e.done===true||(e.done!==false&&Number(e.qty)>0)); }
+// Vorschlag zum Mitnehmen: Soll-Bedarf, aber nicht mehr als laut Lager da ist (nur wenn das Lager gezählt wurde)
+function packSuggest(item,need){ if(!item.count) return need; return Math.max(0,Math.min(need,Math.floor(stockOf(item.key)*10)/10)); }
 function stockOf(key){
   const it=S.items[key]||{}; const c=it.count; const t0=(c&&c.at)||""; let s=c?Number(c.qty)||0:0;
   for(const o of Object.values(S.orders)) if(o.status==="received"&&(o.receivedAt||"")>t0&&o.received) s+=Number(o.received[key])||0;
@@ -325,20 +334,24 @@ function neverCounted(){ return itemList().every(i=>!i.count); }
 function restock(date){
   const groups={}; const d1=addDays(date,1), d2=addDays(date,2);
   const pending={};
-  for(const hut of Object.keys(HUTS)) for(const l of packList(hut,date).lines) if(!packedQty(hut,date,l.item.key)) pending[l.item.key]=(pending[l.item.key]||0)+l.need;
+  const today={};
+  for(const hut of Object.keys(HUTS)) for(const l of packList(hut,date).lines){ const k=l.item.key;
+    if(!isPacked(hut,date,k)) pending[k]=(pending[k]||0)+l.need;
+    else { const miss=l.need-packedQty(hut,date,k); if(miss>0) today[k]=(today[k]||0)+miss; } }
   for(const it of itemList()){
     let target=0; for(const hut of Object.keys(HUTS)) target+=sollOf(it,hut,d1)+sollOf(it,hut,d2);
-    if(!target) continue;
+    const miss=today[it.key]||0;
+    if(!target&&!miss) continue;
     const stock=Math.max(0,stockOf(it.key)), open=openQty(it.key), pend=pending[it.key]||0;
-    const short=target-(stock+open-pend);
-    if(short>0){ const sup=SUPPLIERS[it.supplier]?it.supplier:"moellers"; (groups[sup]=groups[sup]||[]).push({item:it, qty:Math.ceil(short), stock, open, pend, target}); }
+    const short=target+miss-(stock+open-pend);
+    if(short>0){ const sup=SUPPLIERS[it.supplier]?it.supplier:"moellers"; (groups[sup]=groups[sup]||[]).push({item:it, qty:Math.ceil(short), stock, open, pend, target, miss}); }
   }
   return groups;
 }
 function stepState(hut,date){
   const doc=dayDoc(hut,date); const pl=packList(hut,date);
   const ex=extrasFrom(hut,date);
-  const packDone=pl.lines.every(l=>packedQty(hut,date,l.item.key)>0)&&!!doc.equip&&!!doc.terminal&&ex.every(e=>doc.packExtra&&doc.packExtra[e.key]);
+  const packDone=pl.lines.every(l=>isPacked(hut,date,l.item.key))&&!!doc.equip&&!!doc.terminal&&ex.every(e=>doc.packExtra&&doc.packExtra[e.key]);
   const aufDone=AUFBAU.every((_,i)=>doc.aufbau&&doc.aufbau["c"+i]);
   const closeDone=SCHLIESSEN.every((_,i)=>doc.schliessen&&doc.schliessen["c"+i]);
   const nightDone=NACHT.every((_,i)=>doc.nacht&&doc.nacht["c"+i]);
@@ -363,7 +376,8 @@ function numInput(label,value,onValid,extra){
   return h("input",Object.assign({class:"num-in",type:"text",inputmode:"decimal","aria-label":label,value:value==null?"":fmt(value),
     onchange:e=>{ const raw=e.target.value.trim(); const n=parseNum(raw);
       if(raw!==""&&(n==null||n<0)){ e.target.classList.add("bad"); toast("Bitte nur Zahlen ab 0 eintragen"); return; }
-      e.target.classList.remove("bad"); onValid(n); }},extra||{}));
+      e.target.classList.remove("bad"); onValid(n); },
+    onkeydown:e=>{ if(e.key==="Enter"){ e.preventDefault(); e.target.blur(); } }},extra||{}));
 }
 function patchDay(hut,date,patch){ const id=date+"_"+hut; return writeDoc("days/"+id, patch, !!S.days[id]); }
 function patchItem(key,patch){ return writeDoc("items/"+key, patch, !!S.items[key]); }
@@ -449,19 +463,26 @@ function renderHut(hut){
     list.append(h("div",{class:"subhead"},"Ware"));
     if(!st.pl.lines.length) list.append(h("div",{class:"empty"},"Alles noch genug in der Hütte."));
     for(const l of st.pl.lines){
-      const k=l.item.key; const pq=packedQty(hut,date,k); const on=pq>0;
-      const stock=Math.max(0,stockOf(k)); const short=!on&&stock<l.need;
+      const k=l.item.key; const on=isPacked(hut,date,k); const pq=packedQty(hut,date,k);
+      const dk=date+hut+k; const stock=Math.max(0,stockOf(k));
+      const val=on?pq:(ui.draft[dk]!=null?ui.draft[dk]:packSuggest(l.item,l.need));
       const sub=[];
-      if(short&&l.item.count) sub.push(h("span",{class:"warn"},stock>0?`Im Lager nur ${fmt(stock)}`:"Im Lager laut Bestand nichts da"));
+      if(!on&&l.item.count&&stock<l.need) sub.push(h("span",{class:"warn"},stock>0?`Im Lager nur ${fmt(stock)} statt ${fmt(l.need)}`:`Im Lager nichts da, gebraucht ${fmt(l.need)}`));
+      else if(!on&&val!==l.need) sub.push(h("span",{class:"warn"},`Gebraucht ${fmt(l.need)}`));
       if(l.noCount&&!on) sub.push(h("span",{class:"warn"},"Abends nicht gezählt, volle Soll-Menge"));
-      if(on&&pq!==l.need) sub.push(h("span",{class:"warn"},`Geplant waren ${fmt(l.need)}`));
-      let right;
-      if(on&&ui.editPack===hut+k) right=numInput(l.item.name+" gepackt",pq,n=>{ ui.editPack=null; patchDay(hut,date,{pack:{[k]:{qty:n||0,at:nowISO()}}}); },{autofocus:true,onblur:()=>{ if(ui.editPack===hut+k){ ui.editPack=null; pending=true; } }});
-      else if(on) right=h("button",{class:"qbtn","aria-label":"Menge ändern",onclick:()=>{ui.editPack=hut+k;render();setTimeout(()=>{const i=document.querySelector("#app input[autofocus]");if(i){i.focus();i.select();}},0);}},fmt(pq),h("span",{class:"pen"},"✎"));
-      else right=h("span",{class:"qty big"},fmt(l.need));
+      if(on&&pq<l.need) sub.push(h("span",{class:"warn"},`${fmt(l.need-pq)} zu wenig, steht im Nachschub`));
+      if(on&&pq>l.need) sub.push(h("span",{class:"sub quiet"},`${fmt(pq-l.need)} mehr als gebraucht`));
+      const setVal=n=>{ n=Math.max(0,Math.round(n*10)/10);
+        if(on) patchDay(hut,date,{pack:{[k]:{qty:n,done:true,at:nowISO()}}}); else { ui.draft[dk]=n; render(); } };
+      const stepper=h("div",{class:"stepper"+(on?" on":"")},
+        h("button",{class:"sbtn","aria-label":"weniger",disabled:val<=0?"":null,onclick:()=>setVal(val-1)},"−"),
+        h("span",{class:"sval"},fmt(val)),
+        h("button",{class:"sbtn","aria-label":"mehr",onclick:()=>setVal(val+1)},"+"));
       list.append(h("div",{class:"pack-row"},
-        checkRow(on,h("span",{},l.item.name,h("span",{class:"sub quiet"},l.item.unit),sub),()=>patchDay(hut,date,{pack:{[k]:{qty:on?0:l.need,at:nowISO()}}})),
-        right));
+        checkRow(on,h("span",{},l.item.name,h("span",{class:"sub quiet"},l.item.unit),sub),()=>{
+          if(on){ ui.draft[dk]=pq; patchDay(hut,date,{pack:{[k]:{qty:0,done:false,at:nowISO()}}}); }
+          else { delete ui.draft[dk]; patchDay(hut,date,{pack:{[k]:{qty:val,done:true,at:nowISO()}}}); } }),
+        stepper));
     }
     const ex=extrasFrom(hut,date);
     if(ex.length) list.append(h("div",{class:"subhead",style:"margin-top:10px"},"Extra, gestern angefordert"));
@@ -480,7 +501,7 @@ function renderHut(hut){
       stayed.length?[h("div",{class:"subhead",style:"margin-top:8px"},"Schon am Stand"),h("ul",{class:"equl quiet"},stayed.map(e=>h("li",{},h("b",{class:"n"},String(e.stay)),eqLabel(e.name))))]:null));
     list.append(checkRow(!!doc.terminal,"SumUp-Terminal & Kasse vom Küchentisch",()=>patchDay(hut,date,{terminal:!doc.terminal})));
     out.push(list);
-    if(st.pl.lines.length) out.push(h("div",{class:"hint",style:"margin-top:8px"},"Bewusst weniger Ware mitgenommen? Nach dem Abhaken auf die Zahl tippen."));
+    if(st.pl.lines.length) out.push(h("div",{class:"hint",style:"margin-top:8px"},"Mit − und + die Menge anpassen, wenn du mehr oder weniger mitnimmst. Dann abhaken."));
     return out;
   },`${st.pl.lines.length} Positionen, Equipment und Kasse dabei`));
 
@@ -629,7 +650,7 @@ function renderLager(){
     for(const sup of Object.keys(SUPPLIERS)){ const g=groups[sup]; if(!g) continue;
       out.push(h("h3",{},SUPPLIERS[sup].name));
       out.push(h("div",{class:"list"},g.map(l=>h("div",{class:"row"},
-        h("span",{class:"lbl"},l.item.name,h("span",{class:"sub quiet"},`${l.item.unit} · Lager ${fmt(l.stock)} von ${fmt(l.target)}${l.open?" · "+fmt(l.open)+" unterwegs":""}`)),
+        h("span",{class:"lbl"},l.item.name,h("span",{class:"sub quiet"},`${l.item.unit} · Lager ${fmt(l.stock)} von ${fmt(l.target)}${l.open?" · "+fmt(l.open)+" unterwegs":""}`,l.miss?h("span",{class:"warn"},`Heute in der Hütte ${fmt(l.miss)} zu wenig`):null)),
         h("span",{class:"qty big"},fmt(l.qty))))));
       const txt=`Bestellung ${SUPPLIERS[sup].name} für ${parseD(addDays(date,1)).toLocaleDateString("de-DE",{weekday:"short",day:"numeric",month:"numeric"})}:\n`+g.map(l=>`${fmt(l.qty)} ${l.item.unit} ${l.item.name}`).join("\n");
       out.push(h("button",{class:"link",style:"display:block;margin:10px 0 0",onclick:()=>{try{navigator.clipboard.writeText(txt).then(()=>toast("Bestelltext kopiert"),()=>toast("Kopieren nicht möglich"));}catch(e){toast("Kopieren nicht möglich");}}},"Als Text kopieren (für WhatsApp)"));
@@ -840,6 +861,7 @@ function wrapDoc(r){ return {
   onSnapshot:(n,e)=>r.onSnapshot(x=>n({exists:x.exists,data:()=>x.data(),metadata:x.metadata}),err=>e&&e({code:mapCode(err.code),message:err.message}))
 };}
 async function initDb(){
+  if(window.__TESTDB) return window.__TESTDB;
   const T=teamCode(); if(!T||!window.firebase||!window.FIREBASE_CONFIG) return null;
   firebase.initializeApp(window.FIREBASE_CONFIG);
   const fs=firebase.firestore();
