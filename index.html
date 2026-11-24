@@ -204,7 +204,7 @@ const COLD_LIMIT = 7;
 function coldRule(hut,low){
   const cold=low!=null&&low<=COLD_LIMIT;
   if(low==null) return hut==="mm"?"Bis 7 °C bleibt die Ware in der Hütte, sonst in die Kühltruhe hinter dem Apple-Crumble-Stand.":"Bis 7 °C bleibt die Ware in der Hütte, sonst in den Kühlschrank, Rest mit in die Küche.";
-  if(cold) return "Die Ware kann in der Hütte bleiben.";
+  if(cold) return "Die Ware kann in der Hütte bleiben, das Brot kommt trotzdem ins Auto.";
   return hut==="mm"?"Ware in die Kühltruhe hinter dem Apple-Crumble-Stand.":"Ware in den Kühlschrank, was nicht reinpasst, mit in die Küche.";
 }
 // Extras: Einträge "gear:<key>" verweisen auf den Equipment-Katalog, alles andere ist freier Verbrauchsartikel
