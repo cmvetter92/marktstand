@@ -1,6 +1,6 @@
-# Hütten-Tag
+# Marktstand
 
-Tages-App für die Weihnachtsmarkthütten (OG und MM): Packliste aus dem Abendbestand, Aufbau, Schließen, Bestand, Feierabend, Hauptlager mit Nachschub und Wareneingang, Schichtplan.
+Tages-App für Marktstände (Weihnachtsmarkt, Streetfood-Märkte), aktuell OG und MM: Packliste aus dem Abendbestand, Aufbau, Schließen, Bestand, Feierabend, Hauptlager mit Nachschub und Wareneingang, Schichtplan.
 
 - Reine Web-App (eine `index.html`), läuft auf GitHub Pages, aufs Handy legbar.
 - Daten: Firebase Cloud Firestore, anonyme Anmeldung im Hintergrund, kein Login für das Team.

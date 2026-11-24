@@ -1,6 +1,6 @@
 {
-  "name": "Hütten-Tag",
-  "short_name": "Hütten-Tag",
+  "name": "Marktstand",
+  "short_name": "Marktstand",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
