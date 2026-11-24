@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Daten liegen unter teams/<geheimer Team-Code>/<Sammlung>/<Dokument>.
+    // Nur wer den Team-Code kennt, findet die Daten; Auflisten der Teams ist nicht erlaubt.
+    match /teams/{team}/{coll}/{doc} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
