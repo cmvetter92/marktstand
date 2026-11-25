@@ -146,6 +146,8 @@ input.num-in.bad{border-color:var(--danger);background:#fdf0ee;outline-color:var
 .lform{display:flex;flex-direction:column;gap:8px;margin-top:10px}.lform .stepper{align-self:flex-start}
 .seg{display:flex;background:var(--bg);border-radius:10px;padding:3px}.seg button{flex:1;padding:8px;border-radius:8px;font-weight:600;font-size:14px}.seg button.on{background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.12)}
 .row.inv{flex-wrap:wrap}.invf{display:flex;flex-direction:column;align-items:center;gap:2px}.invf small{font-size:11px;color:var(--muted)}.invf .num-in{width:60px}
+.tbox{margin:8px 0 4px;border-top:1px solid var(--line);padding-top:6px}.trow{display:flex;gap:10px;padding:3px 0;font-size:14px}.trow b{flex:none;min-width:70px;font-variant-numeric:tabular-nums}
+.tcompact{font-size:13px;color:var(--muted);margin:2px 0 4px}
 .pen{font-size:12px;color:var(--muted);margin-left:4px;display:inline-block}
 .subhead{font-weight:700;font-size:14px;padding:6px 0 4px}
 .stepper{display:flex;align-items:center;gap:6px}
@@ -497,7 +499,8 @@ function renderHut(hut){
   }
 
   // 1 Packen
-  frag.append(step(0,"Packen in der Küche","14:00 · Plankgasse",st.packDone,activeIdx===0,()=>{
+  const T=dayTimes(date);
+  frag.append(step(0,"Packen in der Küche",T.start+" · Plankgasse 42",st.packDone,activeIdx===0,()=>{
     const out=[];
     const note=noteFrom(hut,date);
     if(note) out.push(h("div",{class:"banner",style:"margin:0 0 10px"},h("b",{},"Notiz von gestern: "),note));
@@ -552,7 +555,7 @@ function renderHut(hut){
   },`${st.pl.lines.length} Positionen, Equipment und Kasse dabei`));
 
   // 2 Aufbau
-  frag.append(step(1,"Aufbau am Markt","14:45 Ankunft · 15:00 öffnen",st.aufDone,activeIdx===1,()=>[
+  frag.append(step(1,"Aufbau am Markt","Stadtgarten öffnet um "+T.open,st.aufDone,activeIdx===1,()=>[
     h("div",{class:"list"},AUFBAU.map((t,i)=>{const on=!!(doc.aufbau&&doc.aufbau["c"+i]); return checkRow(on,t,()=>patchDay(hut,date,{aufbau:{["c"+i]:!on}}));})),
     infoBox("aufbau","So wird aufgebaut",AUFBAU_SCHRITTE)
   ],"Hütte steht, gute Schicht!"));
@@ -563,7 +566,7 @@ function renderHut(hut){
     h("div",{style:"margin-top:4px"},"Jede Barzahlung auf dem Zettel notieren.")));
 
   // 3 Schließen & Putzen
-  frag.append(step(2,"Schließen & putzen","Schichtende",st.closeDone,activeIdx===2,()=>{
+  frag.append(step(2,"Schließen & putzen","21:30 Klappe zu",st.closeDone,activeIdx===2,()=>{
     const list=h("div",{class:"list"});
     SCHLIESSEN.forEach((t,i)=>{
       const on=!!(doc.schliessen&&doc.schliessen["c"+i]);
@@ -651,12 +654,27 @@ function personRow(p){
   return h("div",{class:"row"},h("span",{class:"lbl"},p.open?h("b",{style:"color:var(--warn)"},"Noch offen"):h("b",{},p.name,isLead(p.name)?h("span",{class:"sub tag"},"Lead"):null),h("span",{class:"hint",style:"display:block"},(p.role?p.role+" · ":"")+`${p.from||"?"}–${p.to||"?"} Uhr`)),
     ph?h("div",{class:"phone"},h("a",{href:"tel:"+ph.replace(/\s/g,"")},ph),h("button",{class:"link",onclick:()=>copy(ph)},"Kopieren")):null);
 }
+// Tagesablauf: Treffpunkt Lager, Öffnungszeiten Stadtgarten (Mo–Fr 16–21:30, Sa/So 12–21:30), Schluss
+function dayTimes(date){
+  const wd=parseD(date).getDay(); const we=wd===0||wd===6;
+  const open=we?"12:00":"16:00";
+  let start=null; const day=S.shifts[date];
+  if(day) for(const hut of Object.keys(HUTS)) for(const p of (day[hut]||[])) if(p.from&&(!start||p.from<start)) start=p.from;
+  return {start:start||(we?"10:00":"14:00"),open,close:"21:30"};
+}
+function timesBox(date,compact){
+  const t=dayTimes(date);
+  if(compact) return h("div",{class:"tcompact"},`Lager ${t.start} · geöffnet ${t.open}–${t.close} · Schluss ca. 22:00`);
+  const rows=[[t.start,"Treffpunkt Plankgasse 42 (Lager): packen und vorbereiten"],[t.open,"Stadtgarten öffnet"],[t.close,"Klappe zu, Stand fertig machen"],["ca. 22:00","Feierabend am Stand (Fahrer ca. 22:30, nach der Plankgasse)"]];
+  return h("div",{class:"tbox"},rows.map(([a,b])=>h("div",{class:"trow"},h("b",{},a),h("span",{},b))));
+}
 function renderTeam(hut,date){
   const day=S.shifts[date]; const list=(day&&day[hut])||[]; const k="team:"+hut; const o=!!ui.open[k];
   const line=list.length?list.map(p=>p.open?"offen":`${p.name}${isLead(p.name)?" (Lead)":""} ${(p.from||"").slice(0,2)}–${(p.to||"").slice(0,2)}`).join(" · "):"Kein Schichtplan für heute";
   return h("div",{class:"teamcard"},
     h("button",{class:"teamline",onclick:()=>{ui.open[k]=!o;render();},"aria-expanded":o?"true":"false"},h("span",{class:"tl"},h("span",{class:"quiet"},"Team "),h("b",{},line)),list.length?h("span",{class:"chev"},o?"▲":"▼"):null),
     o?h("div",{class:"list"},list.map(p=>personRow(p))):null,
+    o?timesBox(date):null,
     h("button",{class:"link",style:"font-size:13px",onclick:()=>{ui.plan=true;render();window.scrollTo(0,0);}},"Schichtplan ›"));
 }
 function renderPlan(){
@@ -668,12 +686,15 @@ function renderPlan(){
     h("button",{class:"back",onclick:()=>{ui.plan=false;render();}},"‹ Zurück"),h("h2",{style:"margin:6px 0 0"},"Schichtplan"),
     h("select",{"aria-label":"Person",style:"margin-top:10px",onchange:e=>{try{localStorage.setItem("me",e.target.value);}catch(err){} render();}},
       [h("option",{value:""},"Alle anzeigen"),...names.map(n=>{const o=h("option",{value:n},n); if(n===me) o.selected=true; return o;})])));
+  frag.append(h("div",{class:"card"},h("b",{},"Öffnungszeiten Stadtgarten"),
+    h("div",{class:"tbox"},h("div",{class:"trow"},h("b",{},"Mo–Fr"),h("span",{},"16:00–21:30")),h("div",{class:"trow"},h("b",{},"Sa, So"),h("span",{},"12:00–21:30"))),
+    h("div",{class:"hint",style:"margin-top:6px"},"Treffpunkt ist zu Schichtbeginn im Lager in der Plankgasse 42. Um 21:30 Klappe zu und Stand fertig machen, Feierabend am Stand ca. 22:00. Wer fährt, ist nach der Plankgasse ca. 22:30 fertig.")));
   if(!dates.length) frag.append(h("div",{class:"empty",style:"padding:14px"},"Noch kein Schichtplan eingetragen."));
   for(const d of dates){
     const day=S.shifts[d]; const blocks=[];
     for(const hut of Object.keys(HUTS)){ const ps=(day[hut]||[]).filter(p=>!me||p.name===me); if(ps.length) blocks.push(h("h3",{},HUTS[hut].name),h("div",{class:"list"},ps.map(p=>personRow(p)))); }
     if(!blocks.length) continue;
-    frag.append(h("div",{class:"card"},h("b",{},parseD(d).toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long"})+(d===todayStr()?" · heute":"")),blocks));
+    frag.append(h("div",{class:"card"},h("b",{},parseD(d).toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long"})+(d===todayStr()?" · heute":"")),timesBox(d,true),blocks));
   }
   return frag;
 }
