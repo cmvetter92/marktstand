@@ -389,7 +389,7 @@ function lagerStatus(it,date){
   const min=it.minQty!=null&&it.minQty!==""?Number(it.minQty):null;
   let level="ok";
   if(!counted(it)) level="unknown";
-  else if(avail<tomorrow||avail<=0&&(today>0||tomorrow>0||daily>0)) level="red";
+  else if(avail<0||avail<tomorrow) level="red";
   else if(min!=null?after<min:(days!=null&&days<WARN_DAYS)) level="yellow";
   return {level,kuehl,tk,total,today,short,tomorrow,daily,days,min,fromTk:Math.max(0,Math.min(Math.max(0,tk),tomorrow-avail))};
 }
@@ -723,18 +723,24 @@ function lagerActions(it,st){
   const acts=[["eingang","Eingang +"],["entnahme","Entnahme −"],["umlagern","TK → Kühlung"],["zaehlen","Zählen"]];
   box.append(h("div",{class:"lbtns"},acts.map(([id,t])=>h("button",{class:"lbtn"+(a===id?" on":""),onclick:()=>{ui.lagerAct=a===id?null:id; ui.lagerQty=id==="umlagern"?Math.max(1,st.fromTk||1):1; ui.lagerLoc=id==="entnahme"?"kuehl":"kuehl"; render();}},t))));
   if(!a) return box;
-  const q=ui.lagerQty??1;
+  // Obergrenze: Umlagern höchstens, was im TK ist; Entnahme höchstens, was am Ort ist (sofern gezählt)
+  const l=lagerOf(it); const locCounted=lc=>!!l[lc];
+  let max=Infinity;
+  if(a==="umlagern") max=Math.max(0,st.tk);
+  if(a==="entnahme"&&locCounted(ui.lagerLoc)) max=Math.max(0,ui.lagerLoc==="tk"?st.tk:st.kuehl);
+  const q=Math.min(ui.lagerQty??1,max);
   const stepper=h("div",{class:"stepper"},
     h("button",{class:"sbtn","aria-label":"weniger",disabled:q<=0?"":null,onclick:()=>{ui.lagerQty=Math.max(0,q-1);render();}},"−"),
     h("span",{class:"sval"},fmt(q)),
-    h("button",{class:"sbtn","aria-label":"mehr",onclick:()=>{ui.lagerQty=q+1;render();}},"+"));
+    h("button",{class:"sbtn","aria-label":"mehr",disabled:q>=max?"":null,onclick:()=>{ui.lagerQty=Math.min(max,q+1);render();}},"+"));
   const locSel=()=>h("div",{class:"seg"},Object.entries(LOCS).map(([lk,lt])=>h("button",{class:ui.lagerLoc===lk?"on":"",onclick:()=>{ui.lagerLoc=lk;render();}},lt)));
   const done=msg=>{ toast(msg); ui.lagerAct=null; render(); };
   if(a==="eingang") box.append(h("div",{class:"lform"},h("span",{class:"hint"},"Wohin?"),locSel(),stepper,
     h("button",{class:"btn",disabled:q<=0?"":null,onclick:()=>{addMove({item:k,kind:"eingang",loc:ui.lagerLoc,qty:q}); done(`${it.name}: +${fmt(q)} ${LOCS[ui.lagerLoc]}`);}},"Eingang buchen")));
-  if(a==="entnahme") box.append(h("div",{class:"lform"},h("span",{class:"hint"},"Woraus? (z. B. für Catering)"),locSel(),stepper,
+  if(a==="entnahme") box.append(h("div",{class:"lform"},h("span",{class:"hint"},"Woraus? (z. B. für Catering)"),locSel(),stepper,max!==Infinity?h("span",{class:"hint"},`Laut Bestand ${fmt(max)} da. Stimmt das nicht, bitte zählen.`):null,
     h("button",{class:"btn",disabled:q<=0?"":null,onclick:()=>{addMove({item:k,kind:"entnahme",loc:ui.lagerLoc,qty:q}); done(`${it.name}: −${fmt(q)} ${LOCS[ui.lagerLoc]}`);}},"Entnahme buchen")));
-  if(a==="umlagern") box.append(h("div",{class:"lform"},h("span",{class:"hint"},`Aus dem Tiefkühler in die Kühlung (im TK: ${fmt(Math.max(0,st.tk))})`),stepper,
+  if(a==="umlagern"&&max<=0) box.append(h("div",{class:"lform"},h("span",{class:"hint"},"Im Tiefkühler ist laut Bestand nichts. Falls doch, erst über „Zählen“ den TK eintragen.")));
+  else if(a==="umlagern") box.append(h("div",{class:"lform"},h("span",{class:"hint"},`Aus dem Tiefkühler in die Kühlung (im TK: ${fmt(Math.max(0,st.tk))})`),stepper,
     h("button",{class:"btn",disabled:q<=0?"":null,onclick:()=>{addMove({item:k,kind:"umlagern",from:"tk",to:"kuehl",qty:q}); done(`${it.name}: ${fmt(q)} in die Kühlung`);}},"Umlagern")));
   if(a==="zaehlen"){ const l=lagerOf(it);
     box.append(h("div",{class:"lform"},h("span",{class:"hint"},"Gezählte Menge eintragen, nur volle Packungen. Leer lassen = nicht gezählt."),
