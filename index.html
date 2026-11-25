@@ -118,6 +118,9 @@ input.num-in.bad{border-color:var(--danger);background:#fdf0ee;outline-color:var
 .sval{min-width:30px;text-align:center;font-weight:700;font-size:18px}
 .stepper.on .sval{color:var(--muted)}
 .check.on .lbl .warn{display:inline-block;text-decoration:none}
+.phone{flex:none;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-size:14px}
+.phone a{color:inherit;text-decoration:none;white-space:nowrap;font-variant-numeric:tabular-nums}
+.phone .link{font-size:13px;padding:0}
 .pen{font-size:12px;color:var(--muted);margin-left:4px;display:inline-block}
 .subhead{font-weight:700;font-size:14px;padding:6px 0 4px}
 .stepper{display:flex;align-items:center;gap:6px}
@@ -512,9 +515,9 @@ function renderHut(hut){
   ],"Hütte steht, gute Schicht!"));
 
   frag.append(h("div",{class:"callout"},
-    h("b",{},"Während der Schicht: wir sind cashless"),
-    h("div",{},"Bitte mit Karte oder Handy am SumUp-Terminal zahlen lassen. Bar nur, wenn jemand passend zahlt, Wechselgeld haben wir keins."),
-    h("div",{style:"margin-top:4px"},"Bargeld bitte immer auf dem Zettel notieren, damit der Lead abends den Überblick hat.")));
+    h("b",{},"Wir sind cashless"),
+    h("div",{},"Bezahlt wird am SumUp-Terminal, mit Karte oder Handy. Die Barkasse ist nur für den Notfall und nur, wenn jemand passend zahlt. Wechselgeld gibt es nicht."),
+    h("div",{style:"margin-top:4px"},"Jede Barzahlung auf dem Zettel notieren.")));
 
   // 3 Schließen & Putzen
   frag.append(step(2,"Schließen & putzen","Schichtende",st.closeDone,activeIdx===2,()=>{
@@ -602,8 +605,8 @@ function isLead(name){ const n=String(name||"").trim().toLowerCase(); return lea
 function leadOf(date){ for(const hut of ["mm","og"]){ const l=((S.shifts[date]||{})[hut])||[]; const p=l.find(x=>!x.open&&isLead(x.name)); if(p) return {name:p.name,hut}; } return null; }
 function personRow(p){
   const ph=p.open?"":phoneOf(p.name);
-  return h("div",{class:"row"},h("span",{class:"lbl"},p.open?h("b",{style:"color:var(--warn)"},"Noch offen"):h("b",{},p.name,isLead(p.name)?h("span",{class:"sub tag"},"Lead"):null),h("span",{class:"hint",style:"display:block"},(p.role?p.role+" · ":"")+`${p.from||"?"}–${p.to||"?"} Uhr`+(ph?" · "+ph:""))),
-    ph?h("button",{class:"link",onclick:()=>copy(ph)},"Kopieren"):null);
+  return h("div",{class:"row"},h("span",{class:"lbl"},p.open?h("b",{style:"color:var(--warn)"},"Noch offen"):h("b",{},p.name,isLead(p.name)?h("span",{class:"sub tag"},"Lead"):null),h("span",{class:"hint",style:"display:block"},(p.role?p.role+" · ":"")+`${p.from||"?"}–${p.to||"?"} Uhr`)),
+    ph?h("div",{class:"phone"},h("a",{href:"tel:"+ph.replace(/\s/g,"")},ph),h("button",{class:"link",onclick:()=>copy(ph)},"Kopieren")):null);
 }
 function renderTeam(hut,date){
   const day=S.shifts[date]; const list=(day&&day[hut])||[]; const k="team:"+hut; const o=!!ui.open[k];
@@ -897,6 +900,21 @@ async function initDb(){
   db.doc("team/people").onSnapshot(s=>{S.team=s.exists?s.data():{};render();},e=>console.error(e));
   db.doc("config/main").onSnapshot(s=>{S.config=s.exists?Object.assign({exists:true},s.data()):{};mark("config");},onErr);
 })();
+// Nachttemperatur automatisch: Open-Meteo (kostenlos, ohne Schlüssel), Köln Innenstadt.
+// Tiefstwert zwischen 20 Uhr und 8 Uhr; wird für alle in weather/<Datum> gespeichert, höchstens alle 3 Stunden neu geholt.
+async function fetchWeather(){
+  if(!db) return; const date=todayStr(); const w=S.weather[date];
+  if(w&&w.source==="open-meteo"&&w.at&&Date.now()-new Date(w.at).getTime()<3*3600*1000) return;
+  try{
+    const r=await fetch("https://api.open-meteo.com/v1/forecast?latitude=50.937&longitude=6.958&hourly=temperature_2m&timezone=Europe%2FBerlin&forecast_days=3");
+    const j=await r.json(); const t=j.hourly.time, v=j.hourly.temperature_2m;
+    const from=date+"T20:00", to=addDays(date,1)+"T08:00"; let low=null;
+    for(let i=0;i<t.length;i++) if(t[i]>=from&&t[i]<=to&&v[i]!=null) low=low==null?v[i]:Math.min(low,v[i]);
+    if(low==null) return;
+    db.doc("weather/"+date).update({low:Math.round(low),source:"open-meteo",at:nowISO()});
+  }catch(e){ console.warn("Wetter nicht abrufbar",e); }
+}
+setTimeout(fetchWeather,4000); setInterval(fetchWeather,30*60*1000);
 if("serviceWorker" in navigator){ window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{})); }
 </script>
 </body>
