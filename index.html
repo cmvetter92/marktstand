@@ -121,6 +121,24 @@ input.num-in.bad{border-color:var(--danger);background:#fdf0ee;outline-color:var
 .phone{flex:none;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-size:14px}
 .phone a{color:inherit;text-decoration:none;white-space:nowrap;font-variant-numeric:tabular-nums}
 .phone .link{font-size:13px;padding:0}
+.lhead{margin:4px 2px 10px}.lhead h2{margin:0 0 6px;font-size:22px}.lsum{display:flex;gap:6px;margin-bottom:6px}
+.pill.red{background:#fde2e0;color:#a32116}
+.lcard{padding:4px 14px 12px}
+.lrow{border-top:1px solid var(--line)}.lrow:first-child{border-top:0}
+.lmain{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px 0}
+.ldot{width:10px;height:10px;border-radius:50%;flex:none;background:#3a8f5c}
+.lv-red .ldot{background:#d0362a}.lv-yellow .ldot{background:#e0a400}.lv-grey .ldot{background:#b8b8b8}
+.lname{flex:1;min-width:0}.lname b{font-size:17px;display:block}
+.lstat{display:inline-block;font-size:12px;font-weight:700;border-radius:6px;padding:1px 6px;margin:2px 0}.lv-red .lstat{background:#fde2e0;color:#a32116}.lv-yellow .lstat{background:#fdf0cc;color:#8a6200}
+.lhint{display:block;font-size:13px;color:var(--warn);margin-top:2px}
+.lqty{display:flex;gap:12px;flex:none;text-align:center}.lqty b{display:block;font-size:22px;line-height:1.1}.lqty small{font-size:11px;color:var(--muted)}
+.lv-red .lqty span:first-child b{color:#c0281c}
+.lact{padding:0 0 12px 20px}
+.lbtns{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.lbtn{background:var(--bg);border-radius:10px;padding:10px 6px;font-weight:600;font-size:14px}.lbtn.on{background:var(--accent);color:#fff}
+.lform{display:flex;flex-direction:column;gap:8px;margin-top:10px}.lform .stepper{align-self:flex-start}
+.seg{display:flex;background:var(--bg);border-radius:10px;padding:3px}.seg button{flex:1;padding:8px;border-radius:8px;font-weight:600;font-size:14px}.seg button.on{background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.row.inv{flex-wrap:wrap}.invf{display:flex;flex-direction:column;align-items:center;gap:2px}.invf small{font-size:11px;color:var(--muted)}.invf .num-in{width:60px}
 .pen{font-size:12px;color:var(--muted);margin-left:4px;display:inline-block}
 .subhead{font-weight:700;font-size:14px;padding:6px 0 4px}
 .stepper{display:flex;align-items:center;gap:6px}
@@ -262,7 +280,7 @@ const PUTZPLAN = [
 const WD = ["So","Mo","Di","Mi","Do","Fr","Sa"];
 
 /* ---------- Zustand ---------- */
-const S = { gear:{}, items:{}, days:{}, orders:{}, equipment:{}, config:{}, weather:{}, shifts:{}, team:{}, ready:false, err:null, slow:false };
+const S = { gear:{}, items:{}, days:{}, orders:{}, moves:{}, equipment:{}, config:{}, weather:{}, shifts:{}, team:{}, ready:false, err:null, slow:false };
 let db = null;
 const ui = { sub:null, lastActive:{}, scrollTo:null, editPack:null, draft:{}, tab:"og", date:todayStr(), open:{}, counting:null, recv:{}, delArm:null, newProd:{ hut:{ og:false, mm:false } } };
 
@@ -325,31 +343,45 @@ function overdue(o){ return o.status==="open"&&o.date&&o.date<addDays(todayStr()
 function packedQty(hut,date,key){ const p=dayDoc(hut,date).pack; const e=p&&p[key]; return e&&Number(e.qty)>0?Number(e.qty):0; }
 function isPacked(hut,date,key){ const p=dayDoc(hut,date).pack; const e=p&&p[key]; return !!e&&(e.done===true||(e.done!==false&&Number(e.qty)>0)); }
 // Vorschlag zum Mitnehmen: Soll-Bedarf, aber nicht mehr als laut Lager da ist (nur wenn das Lager gezählt wurde)
-function packSuggest(item,need){ if(!item.count) return need; return Math.max(0,Math.min(need,Math.floor(stockOf(item.key)*10)/10)); }
-function stockOf(key){
-  const it=S.items[key]||{}; const c=it.count; const t0=(c&&c.at)||""; let s=c?Number(c.qty)||0:0;
-  for(const o of Object.values(S.orders)) if(o.status==="received"&&(o.receivedAt||"")>t0&&o.received) s+=Number(o.received[key])||0;
-  for(const d of Object.values(S.days)) if(d.pack&&d.pack[key]){ const e=d.pack[key]; if(Number(e.qty)>0&&(e.at||"")>t0) s-=Number(e.qty); }
+function packSuggest(item,need){ if(!counted(item)) return need; return Math.max(0,Math.min(need,Math.floor(stockOf(item.key)*10)/10)); }
+// Lager: zwei Orte (Kühlung, Tiefkühler). Bestand = letzte Zählung je Ort + Bewegungen danach − am Markt Gepacktes (aus der Kühlung).
+const LOCS={kuehl:"Kühlung",tk:"Tiefkühler"};
+function lagerOf(it){ if(!it) return {}; if(it.lager) return it.lager; return it.count?{kuehl:it.count}:{}; }
+function counted(it){ const l=lagerOf(it); return !!(l.kuehl||l.tk); }
+function stockAt(key,loc){
+  const it=S.items[key]; const c=lagerOf(it)[loc]; const t0=(c&&c.at)||""; let s=c?Number(c.qty)||0:0;
+  for(const m of Object.values(S.moves)){ if(m.item!==key||(m.at||"")<=t0) continue; const q=Number(m.qty)||0;
+    if(m.kind==="eingang"&&m.loc===loc) s+=q;
+    else if(m.kind==="entnahme"&&m.loc===loc) s-=q;
+    else if(m.kind==="umlagern"){ if(m.from===loc) s-=q; if(m.to===loc) s+=q; } }
+  if(loc==="kuehl"){
+    for(const o of Object.values(S.orders)) if(o.status==="received"&&(o.receivedAt||"")>t0&&o.received) s+=Number(o.received[key])||0;
+    for(const d of Object.values(S.days)) if(d.pack&&d.pack[key]){ const e=d.pack[key]; if(Number(e.qty)>0&&(e.at||"")>t0) s-=Number(e.qty); }
+  }
   return s;
 }
-function openQty(key){ let s=0; for(const o of Object.values(S.orders)) if(o.status==="open"&&o.lines) s+=Number(o.lines[key])||0; return s; }
-function neverCounted(){ return itemList().every(i=>!i.count); }
-function restock(date){
-  const groups={}; const d1=addDays(date,1), d2=addDays(date,2);
-  const pending={};
-  const today={};
-  for(const hut of Object.keys(HUTS)) for(const l of packList(hut,date).lines){ const k=l.item.key;
-    if(!isPacked(hut,date,k)) pending[k]=(pending[k]||0)+l.need;
-    else { const miss=l.need-packedQty(hut,date,k); if(miss>0) today[k]=(today[k]||0)+miss; } }
-  for(const it of itemList()){
-    let target=0; for(const hut of Object.keys(HUTS)) target+=sollOf(it,hut,d1)+sollOf(it,hut,d2);
-    const miss=today[it.key]||0;
-    if(!target&&!miss) continue;
-    const stock=Math.max(0,stockOf(it.key)), open=openQty(it.key), pend=pending[it.key]||0;
-    const short=target+miss-(stock+open-pend);
-    if(short>0){ const sup=SUPPLIERS[it.supplier]?it.supplier:"moellers"; (groups[sup]=groups[sup]||[]).push({item:it, qty:Math.ceil(short), stock, open, pend, target, miss}); }
+function stockOf(key){ return stockAt(key,"kuehl"); }
+function addMove(m){ if(!db){ toast("Keine Verbindung"); return; } const id=Date.now().toString(36)+Math.random().toString(36).slice(2,6); writeDoc("moves/"+id,Object.assign({at:nowISO()},m)); }
+function neverCounted(){ return itemList().every(i=>!counted(i)); }
+// Status je Produkt: rot = reicht nicht für morgen, gelb = knapp (unter 3 Tagen Marktbedarf oder unter Mindestmenge)
+const WARN_DAYS=3;
+function lagerStatus(it,date){
+  const k=it.key; const d1=addDays(date,1);
+  let today=0, short=0, tomorrow=0, daily=0;
+  for(const hut of Object.keys(HUTS)){
+    for(const l of packList(hut,date).lines) if(l.item.key===k){ if(!isPacked(hut,date,k)) today+=l.need; else short+=Math.max(0,l.need-packedQty(hut,date,k)); }
+    for(const l of packList(hut,d1).lines) if(l.item.key===k) tomorrow+=l.need;
+    for(let i=1;i<=WARN_DAYS;i++) daily+=sollOf(it,hut,addDays(date,i))/WARN_DAYS;
   }
-  return groups;
+  const kuehl=stockAt(k,"kuehl"), tk=stockAt(k,"tk"), total=Math.max(0,kuehl)+Math.max(0,tk);
+  const avail=Math.max(0,kuehl)-today, after=total-today;
+  const min=it.minQty!=null&&it.minQty!==""?Number(it.minQty):null;
+  let level="ok";
+  if(!counted(it)) level="unknown";
+  else if(avail<tomorrow||avail<=0&&(today>0||tomorrow>0||daily>0)) level="red";
+  else if(min!=null?after<min:(daily>0&&after<daily*WARN_DAYS)) level="yellow";
+  const days=daily>0?Math.floor(Math.max(0,after)/daily*10)/10:null;
+  return {level,kuehl,tk,total,today,short,tomorrow,daily,days,min,fromTk:Math.max(0,Math.min(Math.max(0,tk),tomorrow-avail))};
 }
 function stepState(hut,date){
   const doc=dayDoc(hut,date); const pl=packList(hut,date);
@@ -470,10 +502,10 @@ function renderHut(hut){
       const dk=date+hut+k; const stock=Math.max(0,stockOf(k));
       const val=on?pq:(ui.draft[dk]!=null?ui.draft[dk]:packSuggest(l.item,l.need));
       const sub=[];
-      if(!on&&l.item.count&&stock<l.need) sub.push(h("span",{class:"warn"},stock>0?`Im Lager nur ${fmt(stock)} statt ${fmt(l.need)}`:`Im Lager nichts da, gebraucht ${fmt(l.need)}`));
+      if(!on&&counted(l.item)&&stock<l.need) sub.push(h("span",{class:"warn"},stock>0?`Im Lager nur ${fmt(stock)} statt ${fmt(l.need)}`:`Im Lager nichts da, gebraucht ${fmt(l.need)}`));
       else if(!on&&val!==l.need) sub.push(h("span",{class:"warn"},`Gebraucht ${fmt(l.need)}`));
       if(l.noCount&&!on) sub.push(h("span",{class:"warn"},"Abends nicht gezählt, volle Soll-Menge"));
-      if(on&&pq<l.need) sub.push(h("span",{class:"warn"},`${fmt(l.need-pq)} zu wenig, steht im Nachschub`));
+      if(on&&pq<l.need) sub.push(h("span",{class:"warn"},`${fmt(l.need-pq)} weniger als gebraucht`));
       if(on&&pq>l.need) sub.push(h("span",{class:"sub quiet"},`${fmt(pq-l.need)} mehr als gebraucht`));
       const setVal=n=>{ n=Math.max(0,Math.round(n*10)/10);
         if(on) patchDay(hut,date,{pack:{[k]:{qty:n,done:true,at:nowISO()}}}); else { ui.draft[dk]=n; render(); } };
@@ -642,70 +674,90 @@ function section(id,title,pill,body,defOpen){
     h("button",{class:"sec-h",onclick:()=>{ui.open[key]=!open;render();}},h("h2",{},title),h("span",{},pill||null," ",h("span",{class:"chev"},open?"▲":"▼"))),
     open?h("div",{style:"margin-top:8px"},body()):null);
 }
+const LV={red:{t:"Morgen leer",c:"red"},yellow:{t:"Knapp",c:"yellow"},ok:{t:"Ausreichend",c:"ok"},unknown:{t:"Nicht gezählt",c:"grey"}};
+function lagerRow(it,st,date){
+  const k=it.key; const open=ui.lagerOpen===k;
+  const info=[];
+  if(st.level==="unknown") info.push("Noch nie gezählt");
+  else {
+    if(st.today) info.push(`Heute noch zu packen ${fmt(st.today)}`);
+    if(st.tomorrow) info.push(`Morgen gebraucht ${fmt(st.tomorrow)}`);
+    if(st.days!=null&&st.level!=="red") info.push(`reicht ca. ${fmt(st.days)} Tage`);
+    if(st.min!=null) info.push(`Mindestmenge ${fmt(st.min)}`);
+  }
+  const extra=[];
+  if(st.level==="red"&&st.fromTk>0) extra.push(h("span",{class:"lhint"},`${fmt(st.fromTk)} aus dem Tiefkühler in die Kühlung holen`));
+  if(st.short) extra.push(h("span",{class:"lhint"},`Heute ${fmt(st.short)} weniger an die Hütten als gebraucht`));
+  const neg=st.kuehl<0||st.tk<0;
+  if(neg) extra.push(h("span",{class:"lhint"},"Mehr entnommen als gebucht, bitte nachzählen"));
+  const row=h("div",{class:"lrow lv-"+LV[st.level].c+(open?" open":"")},
+    h("button",{class:"lmain",onclick:()=>{ui.lagerOpen=open?null:k; ui.lagerAct=null; render();}},
+      h("span",{class:"ldot"}),
+      h("span",{class:"lname"},h("b",{},it.name),(st.level==="red"||st.level==="yellow")?h("span",{class:"lstat"},LV[st.level].t):null,h("span",{class:"sub quiet"},it.unit+(info.length?" · "+info.join(" · "):"")),extra),
+      h("span",{class:"lqty"},h("span",{},h("b",{},fmt(Math.max(0,st.kuehl))),h("small",{},"Kühlung")),h("span",{},h("b",{},fmt(Math.max(0,st.tk))),h("small",{},"TK")))));
+  if(open) row.append(lagerActions(it,st));
+  return row;
+}
+function lagerActions(it,st){
+  const k=it.key; const a=ui.lagerAct; const box=h("div",{class:"lact"});
+  const acts=[["eingang","Eingang +"],["entnahme","Entnahme −"],["umlagern","TK → Kühlung"],["zaehlen","Zählen"]];
+  box.append(h("div",{class:"lbtns"},acts.map(([id,t])=>h("button",{class:"lbtn"+(a===id?" on":""),onclick:()=>{ui.lagerAct=a===id?null:id; ui.lagerQty=id==="umlagern"?Math.max(1,st.fromTk||1):1; ui.lagerLoc=id==="entnahme"?"kuehl":"kuehl"; render();}},t))));
+  if(!a) return box;
+  const q=ui.lagerQty??1;
+  const stepper=h("div",{class:"stepper"},
+    h("button",{class:"sbtn","aria-label":"weniger",disabled:q<=0?"":null,onclick:()=>{ui.lagerQty=Math.max(0,q-1);render();}},"−"),
+    h("span",{class:"sval"},fmt(q)),
+    h("button",{class:"sbtn","aria-label":"mehr",onclick:()=>{ui.lagerQty=q+1;render();}},"+"));
+  const locSel=()=>h("div",{class:"seg"},Object.entries(LOCS).map(([lk,lt])=>h("button",{class:ui.lagerLoc===lk?"on":"",onclick:()=>{ui.lagerLoc=lk;render();}},lt)));
+  const done=msg=>{ toast(msg); ui.lagerAct=null; render(); };
+  if(a==="eingang") box.append(h("div",{class:"lform"},h("span",{class:"hint"},"Wohin?"),locSel(),stepper,
+    h("button",{class:"btn",disabled:q<=0?"":null,onclick:()=>{addMove({item:k,kind:"eingang",loc:ui.lagerLoc,qty:q}); done(`${it.name}: +${fmt(q)} ${LOCS[ui.lagerLoc]}`);}},"Eingang buchen")));
+  if(a==="entnahme") box.append(h("div",{class:"lform"},h("span",{class:"hint"},"Woraus? (z. B. für Catering)"),locSel(),stepper,
+    h("button",{class:"btn",disabled:q<=0?"":null,onclick:()=>{addMove({item:k,kind:"entnahme",loc:ui.lagerLoc,qty:q}); done(`${it.name}: −${fmt(q)} ${LOCS[ui.lagerLoc]}`);}},"Entnahme buchen")));
+  if(a==="umlagern") box.append(h("div",{class:"lform"},h("span",{class:"hint"},`Aus dem Tiefkühler in die Kühlung (im TK: ${fmt(Math.max(0,st.tk))})`),stepper,
+    h("button",{class:"btn",disabled:q<=0?"":null,onclick:()=>{addMove({item:k,kind:"umlagern",from:"tk",to:"kuehl",qty:q}); done(`${it.name}: ${fmt(q)} in die Kühlung`);}},"Umlagern")));
+  if(a==="zaehlen"){ const l=lagerOf(it);
+    box.append(h("div",{class:"lform"},h("span",{class:"hint"},"Gezählte Menge eintragen, nur volle Packungen. Leer lassen = nicht gezählt."),
+      h("div",{class:"grid2"},Object.entries(LOCS).map(([lk,lt])=>h("label",{class:"hint"},lt+(l[lk]?` (zuletzt ${new Date(l[lk].at).toLocaleDateString("de-DE",{day:"numeric",month:"numeric"})})`:""),
+        numInput(lt+" "+it.name,null,n=>{ if(n==null) return; patchItem(k,{lager:{[lk]:{qty:n,at:nowISO()}}}); toast(`${it.name}: ${lt} ${fmt(n)}`); },{placeholder:fmt(Math.max(0,stockAt(k,lk)))}))))));
+  }
+  return box;
+}
 function renderLager(){
   const frag=document.createDocumentFragment(); const date=ui.date;
-  if(S.ready&&neverCounted()&&itemList().length) frag.append(h("div",{class:"banner"},"Der Bestand im Hauptlager ist noch nie gezählt worden, deshalb fehlt im Nachschub fast alles. ",h("button",{class:"link",onclick:()=>{ui.open["lager:bestand"]=true;ui.open["lager:nach"]=false;render();}},"Jetzt zählen")));
+  const all=itemList().map(it=>({it,st:lagerStatus(it,date)}));
+  const order={red:0,yellow:1,unknown:2,ok:3};
+  all.sort((a,b)=>order[a.st.level]-order[b.st.level]||(a.it.sort??999)-(b.it.sort??999));
+  const nR=all.filter(x=>x.st.level==="red").length, nY=all.filter(x=>x.st.level==="yellow").length;
+  frag.append(h("div",{class:"lhead"},h("h2",{},"Lager"),
+    h("div",{class:"lsum"},nR?h("span",{class:"pill red"},nR+" morgen leer"):null,nY?h("span",{class:"pill warn"},nY+" knapp"):null,!nR&&!nY?h("span",{class:"pill ok"},"alles ausreichend"):null),
+    h("div",{class:"hint"},"Gepflegt von der Küche. Was für den Markt gepackt wird, geht automatisch von der Kühlung ab. Produkt antippen für Eingang, Entnahme, Umlagern oder Zählen.")));
   const miss=itemList().filter(missingSoll);
-  if(miss.length) frag.append(h("div",{class:"banner"},"Soll-Wert fehlt bei: "+miss.map(i=>i.name).join(", ")+". Sie werden an den betroffenen Tagen nicht gepackt. Nachtragen unter OG bzw. MM → ⚙ Einstellungen → Ware & Soll-Mengen."));
-  const groups=restock(date); const nG=Object.values(groups).reduce((a,g)=>a+g.length,0);
-  frag.append(section("nach","Nachschub",h("span",{class:"pill "+(nG?"warn":"ok")},nG?nG+" fehlen":"alles da"),()=>{
-    const out=[h("div",{class:"hint"},"Was fehlt, damit der Bedarf beider Hütten für die nächsten 2 Tage gedeckt ist. Heute noch zu Packendes und Unterwegs ist eingerechnet.")];
-    if(!nG) out.push(h("div",{class:"empty"},"Alles ausreichend auf Lager."));
-    for(const sup of Object.keys(SUPPLIERS)){ const g=groups[sup]; if(!g) continue;
-      out.push(h("h3",{},SUPPLIERS[sup].name));
-      out.push(h("div",{class:"list"},g.map(l=>h("div",{class:"row"},
-        h("span",{class:"lbl"},l.item.name,h("span",{class:"sub quiet"},`${l.item.unit} · Lager ${fmt(l.stock)} von ${fmt(l.target)}${l.open?" · "+fmt(l.open)+" unterwegs":""}`,l.miss?h("span",{class:"warn"},`Heute in der Hütte ${fmt(l.miss)} zu wenig`):null)),
-        h("span",{class:"qty big"},fmt(l.qty))))));
-      const txt=`Bestellung ${SUPPLIERS[sup].name} für ${parseD(addDays(date,1)).toLocaleDateString("de-DE",{weekday:"short",day:"numeric",month:"numeric"})}:\n`+g.map(l=>`${fmt(l.qty)} ${l.item.unit} ${l.item.name}`).join("\n");
-      out.push(h("button",{class:"link",style:"display:block;margin:10px 0 0",onclick:()=>{try{navigator.clipboard.writeText(txt).then(()=>toast("Bestelltext kopiert"),()=>toast("Kopieren nicht möglich"));}catch(e){toast("Kopieren nicht möglich");}}},"Als Text kopieren (für WhatsApp)"));
-      out.push(h("button",{class:"btn sec",onclick:async(e)=>{e.target.disabled=true; if(!db){toast("Nicht angemeldet");return;}
-        const lines={}; g.forEach(l=>lines[l.item.key]=l.qty);
-        try{ await db.collection("orders").add({supplier:sup,date,lines,status:"open",createdAt:nowISO()}); toast(SUPPLIERS[sup].name+": vermerkt"); }catch(err){ console.error(err); toast("Speichern fehlgeschlagen"); }
-      }},SUPPLIERS[sup].orderBtn));
+  if(miss.length) frag.append(h("div",{class:"banner"},"Soll-Wert fehlt bei: "+miss.map(i=>i.name).join(", ")+"."));
+  const list=h("div",{class:"card lcard"});
+  const showOk=!!ui.open["lager:ok"];
+  for(const x of all){ if(x.st.level==="ok"&&!showOk&&ui.lagerOpen!==x.it.key) continue; list.append(lagerRow(x.it,x.st,date)); }
+  const nOk=all.filter(x=>x.st.level==="ok").length;
+  if(nOk) list.append(h("button",{class:"link",style:"display:block;padding:12px 0 2px",onclick:()=>{ui.open["lager:ok"]=!showOk;render();}},showOk?"Ausreichende ausblenden":`${nOk} weitere ausreichend anzeigen`));
+  const low=all.filter(x=>x.st.level==="red"||x.st.level==="yellow");
+  if(low.length){ const txt="Lager knapp ("+parseD(date).toLocaleDateString("de-DE",{weekday:"short",day:"numeric",month:"numeric"})+"):\n"+low.map(x=>`${x.st.level==="red"?"🔴":"🟡"} ${x.it.name}: Kühlung ${fmt(Math.max(0,x.st.kuehl))}, TK ${fmt(Math.max(0,x.st.tk))} ${x.it.unit}`+(x.st.tomorrow?`, morgen gebraucht ${fmt(x.st.tomorrow)}`:"")).join("\n");
+    list.append(h("button",{class:"link",style:"display:block;padding:10px 0 2px",onclick:()=>{try{navigator.clipboard.writeText(txt).then(()=>toast("Liste kopiert"),()=>toast("Kopieren nicht möglich"));}catch(e){toast("Kopieren nicht möglich");}}},"Knappe Produkte kopieren (für WhatsApp)")); }
+  frag.append(list);
+  // Inventur
+  frag.append(section("inv","Inventur",h("span",{class:"hint"},lastInventory()),()=>{
+    const out=[h("div",{class:"hint"},"Alles zählen, nur volle Packungen. Jede eingetragene Zahl setzt den Bestand an diesem Ort neu. Leer lassen = nicht gezählt.")];
+    const lst=h("div",{class:"list"});
+    for(const it of itemList()){ const l=lagerOf(it); const today=x=>x&&new Date(x.at).toDateString()===new Date().toDateString();
+      lst.append(h("div",{class:"row inv"},h("span",{class:"lbl"},it.name,h("span",{class:"sub quiet"},it.unit)),
+        Object.entries(LOCS).map(([lk,lt])=>h("label",{class:"invf"},h("small",{},lk==="tk"?"TK":lt),
+          numInput(lt+" "+it.name,today(l[lk])?l[lk].qty:null,n=>{ if(n==null) return; patchItem(it.key,{lager:{[lk]:{qty:n,at:nowISO()}}}); },{placeholder:fmt(Math.max(0,stockAt(it.key,lk)))})))));
     }
-    return out;
-  },true));
-
-  const open=Object.entries(S.orders).filter(([,o])=>o.status==="open").sort((a,b)=>String(a[1].createdAt).localeCompare(String(b[1].createdAt)));
-  const nOver=open.filter(([,o])=>overdue(o)).length;
-  frag.append(section("ein","Wareneingang",h("span",{class:"pill"+(open.length?" warn":" ok")},open.length?open.length+" offen"+(nOver?", "+nOver+" überfällig":""):"nichts offen"),()=>{
-    if(!open.length) return h("div",{class:"empty"},"Keine offenen Bestellungen.");
-    return open.map(([id,o])=>{
-      const sup=SUPPLIERS[o.supplier]||SUPPLIERS.moellers; const draft=ui.recv[id]||(ui.recv[id]={});
-      const box=h("div",{class:"prod"},h("b",{},sup.name),h("span",{class:"hint"}," · "+sup.open+" am "+parseD(o.date).toLocaleDateString("de-DE",{day:"numeric",month:"numeric"})),overdue(o)?h("span",{class:"pill warn",style:"margin-left:8px"},"überfällig"):null);
-      if(overdue(o)) box.append(h("div",{class:"warn",style:"margin-top:4px"},"Seit über 2 Tagen offen. Ist die Ware da? Dann bestätigen. Kommt sie nicht mehr, stornieren, damit neu bestellt wird."));
-      const list=h("div",{class:"list"});
-      for(const [k,q] of Object.entries(o.lines||{})){ const it=S.items[k]; if(!it) continue;
-        list.append(h("div",{class:"row"},h("span",{class:"lbl"},it.name,h("span",{class:"sub quiet"},`${it.unit} · bestellt ${fmt(q)}`)),
-          numInput(it.name+" geliefert",draft[k]!=null?draft[k]:q,n=>{draft[k]=n??0;})));
-      }
-      box.append(h("div",{class:"hint"},"Menge anpassen, falls etwas fehlt oder mehr kam."),list,
-        h("button",{class:"btn",onclick:async(e)=>{e.target.disabled=true; const rec={}; for(const [k,q] of Object.entries(o.lines||{})) rec[k]=draft[k]!=null?draft[k]:q;
-          try{ await db.doc("orders/"+id).update({status:"received",received:rec,receivedAt:nowISO()}); delete ui.recv[id]; toast("Eingebucht"); }catch(err){ console.error(err); toast("Speichern fehlgeschlagen"); e.target.disabled=false; }
-        }},sup.recvBtn),
-        h("div",{style:"text-align:center;margin-top:10px"},ui.delArm==="o"+id
-          ?h("button",{class:"link danger",onclick:()=>{db.doc("orders/"+id).delete().catch(()=>toast("Löschen fehlgeschlagen")); ui.delArm=null;}},"Wirklich stornieren?")
-          :h("button",{class:"link",onclick:()=>{ui.delArm="o"+id;render();}},"Stornieren")));
-      return box;
-    });
-  },open.length>0));
-
-  frag.append(section("bestand","Bestand Hauptlager zählen",null,()=>{
-    const out=[h("div",{class:"hint"},"Wird rechnerisch geführt: Eingänge plus, Gepacktes minus. Nachzählen setzt den Stand neu.")];
-    out.push(h("div",{class:"hint"},"Zum Zählen einfach die gezählte Menge ins Feld tippen. Leer lassen = nicht gezählt."));
-    const list=h("div",{class:"list"});
-    for(const it of itemList()){
-      const st=stockOf(it.key);
-      list.append(h("div",{class:"row"},
-        h("span",{class:"lbl"},it.name,h("span",{class:"sub quiet"},`${it.unit} · rechnerisch ${fmt(Math.max(0,st))}`+(it.count?" · gezählt "+new Date(it.count.at).toLocaleDateString("de-DE",{day:"numeric",month:"numeric"}):" · noch nie gezählt")+(st<0?" · mehr entnommen als gebucht":""))),
-        numInput("Gezählt "+it.name,(it.count&&new Date(it.count.at).toDateString()===new Date().toDateString())?it.count.qty:null,n=>{ if(n==null) return; patchItem(it.key,{count:{qty:n,at:nowISO()}}); toast(it.name+": "+fmt(n)+" gespeichert"); },{placeholder:"–"})));
-    }
-    out.push(list); return out;
+    out.push(lst); return out;
   },false));
-
   frag.append(footer([["Einstellungen Lager",()=>openSub({type:"lager"})],["Allgemein",()=>openSub({type:"general"})]]));
   return frag;
 }
+function lastInventory(){ let t=""; for(const it of itemList()){ const l=lagerOf(it); for(const x of Object.values(l)) if(x&&x.at>t) t=x.at; } return t?"zuletzt gezählt "+new Date(t).toLocaleDateString("de-DE",{day:"numeric",month:"numeric"}):"noch nie"; }
 
 /* ---------- Einstellungen: je Hütte, Lager, Allgemein ---------- */
 function footer(links){ return h("div",{class:"footer"},links.map(([t,f])=>h("button",{class:"flink",onclick:f},"⚙ "+t))); }
@@ -790,7 +842,7 @@ function renderHutProducts(hut){
   return out;
 }
 function renderLagerProducts(){
-  const out=[h("div",{class:"hint"},"Einheit und Lieferant gelten für beide Hütten und das Hauptlager.")];
+  const out=[h("div",{class:"hint"},"Einheit und Lieferant gelten für beide Hütten und das Lager. Mindestmenge ist freiwillig. Ohne sie gilt ein Produkt als knapp, wenn es weniger als 3 Tage Marktbedarf reicht. Mit Mindestmenge gilt stattdessen diese, z. B. für Brot, das täglich kommt, oder Sachen, die auch fürs Catering gebraucht werden.")];
   for(const it of itemList()){
     const k="lp:"+it.key; const o=!!ui.open[k];
     const huts=Object.keys(HUTS).filter(x=>it.soll&&it.soll[x]).map(x=>HUTS[x].short).join(" + ")||"keine Hütte";
@@ -800,6 +852,7 @@ function renderLagerProducts(){
       h("div",{class:"grid2"},
         h("label",{class:"hint"},"Name",h("input",{class:"txt",type:"text",value:it.name,onchange:e=>{const v=e.target.value.trim(); if(v) patchItem(it.key,{name:v});}})),
         h("label",{class:"hint"},"Einheit",h("input",{class:"txt",type:"text",value:it.unit||"",onchange:e=>patchItem(it.key,{unit:e.target.value.trim()})}))),
+      h("label",{class:"hint",style:"display:block;margin-top:8px"},"Mindestmenge im Lager (optional)",numInput("Mindestmenge "+it.name,it.minQty??null,n=>patchItem(it.key,{minQty:n==null?null:n}),{placeholder:"automatisch"})),
       h("label",{class:"hint",style:"display:block;margin-top:8px"},"Lieferant",h("select",{onchange:e=>patchItem(it.key,{supplier:e.target.value})},Object.entries(SUPPLIERS).map(([kk,s])=>{const op=h("option",{value:kk},s.name); if(it.supplier===kk) op.selected=true; return op;}))),
       h("div",{style:"margin-top:10px"},ui.delArm==="p"+it.key
         ?h("button",{class:"link danger",onclick:()=>{ui.delArm=null; db&&db.doc("items/"+it.key).delete().catch(()=>toast("Löschen fehlgeschlagen"));}},"Wirklich komplett löschen?")
@@ -893,6 +946,7 @@ async function initDb(){
   db.collection("items").onSnapshot(s=>{S.items=toMap(s);mark("items");},onErr);
   db.collection("days").onSnapshot(s=>{S.days=toMap(s);mark("days");},onErr);
   db.collection("orders").onSnapshot(s=>{S.orders=toMap(s);mark("orders");},onErr);
+  db.collection("moves").onSnapshot(s=>{S.moves=toMap(s);render();},e=>console.error(e));
   db.collection("equipment").onSnapshot(s=>{S.equipment=toMap(s);mark("equipment");},onErr);
   db.collection("gear").onSnapshot(s=>{S.gear=toMap(s);render();},e=>console.error(e));
   db.collection("weather").onSnapshot(s=>{S.weather=toMap(s);render();},e=>console.error(e));
