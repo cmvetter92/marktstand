@@ -148,6 +148,7 @@ input.num-in.bad{border-color:var(--danger);background:#fdf0ee;outline-color:var
 .row.inv{flex-wrap:wrap}.invf{display:flex;flex-direction:column;align-items:center;gap:2px}.invf small{font-size:11px;color:var(--muted)}.invf .num-in{width:60px}
 .tbox{margin:8px 0 4px;border-top:1px solid var(--line);padding-top:6px}.trow{display:flex;gap:10px;padding:3px 0;font-size:14px}.trow b{flex:none;min-width:70px;font-variant-numeric:tabular-nums}
 .tcompact{font-size:13px;color:var(--muted);margin:2px 0 4px}
+.leadline{font-size:14px;margin:6px 0 2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}.leadline .tag{margin:0}.leadline.none{color:var(--warn)}
 .pen{font-size:12px;color:var(--muted);margin-left:4px;display:inline-block}
 .subhead{font-weight:700;font-size:14px;padding:6px 0 4px}
 .stepper{display:flex;align-items:center;gap:6px}
@@ -668,12 +669,20 @@ function timesBox(date,compact){
   const rows=[[t.start,"Treffpunkt Plankgasse 42 (Lager): packen und vorbereiten"],[t.open,"Stadtgarten öffnet"],[t.close,"Klappe zu, Stand fertig machen"],["ca. 22:00","Feierabend am Stand (Fahrer ca. 22:30, nach der Plankgasse)"]];
   return h("div",{class:"tbox"},rows.map(([a,b])=>h("div",{class:"trow"},h("b",{},a),h("span",{},b))));
 }
+const LEAD_INFO="Der Lead darf das Auto fahren und ist für alle Fahrten zuständig: Ware zu Schichtbeginn vom Lager zum Stand, abends zurück, und zwischendurch, wenn etwas nachgeholt werden muss. Gilt für beide Hütten.";
+function leadLine(date){
+  const l=leadOf(date);
+  if(!S.shifts[date]) return null;
+  return h("div",{class:"leadline"+(l?"":" none")},l?[h("span",{class:"sub tag"},"Lead"),h("b",{},l.name),h("span",{class:"quiet"}," · fährt heute das Auto"+(l.hut?` (${HUTS[l.hut].short||l.hut.toUpperCase()})`:""))]:[h("b",{},"Kein Lead eingeteilt."),h("span",{}," Niemand mit Auto, bitte klären.")]);
+}
 function renderTeam(hut,date){
   const day=S.shifts[date]; const list=(day&&day[hut])||[]; const k="team:"+hut; const o=!!ui.open[k];
   const line=list.length?list.map(p=>p.open?"offen":`${p.name}${isLead(p.name)?" (Lead)":""} ${(p.from||"").slice(0,2)}–${(p.to||"").slice(0,2)}`).join(" · "):"Kein Schichtplan für heute";
   return h("div",{class:"teamcard"},
     h("button",{class:"teamline",onclick:()=>{ui.open[k]=!o;render();},"aria-expanded":o?"true":"false"},h("span",{class:"tl"},h("span",{class:"quiet"},"Team "),h("b",{},line)),list.length?h("span",{class:"chev"},o?"▲":"▼"):null),
+    leadLine(date),
     o?h("div",{class:"list"},list.map(p=>personRow(p))):null,
+    o?h("div",{class:"hint",style:"margin:8px 0 0"},LEAD_INFO):null,
     o?timesBox(date):null,
     h("button",{class:"link",style:"font-size:13px",onclick:()=>{ui.plan=true;render();window.scrollTo(0,0);}},"Schichtplan ›"));
 }
@@ -686,6 +695,7 @@ function renderPlan(){
     h("button",{class:"back",onclick:()=>{ui.plan=false;render();}},"‹ Zurück"),h("h2",{style:"margin:6px 0 0"},"Schichtplan"),
     h("select",{"aria-label":"Person",style:"margin-top:10px",onchange:e=>{try{localStorage.setItem("me",e.target.value);}catch(err){} render();}},
       [h("option",{value:""},"Alle anzeigen"),...names.map(n=>{const o=h("option",{value:n},n); if(n===me) o.selected=true; return o;})])));
+  frag.append(h("div",{class:"card"},h("b",{},"Was heißt Lead?"),h("div",{class:"hint",style:"margin-top:4px"},LEAD_INFO)));
   frag.append(h("div",{class:"card"},h("b",{},"Öffnungszeiten Stadtgarten"),
     h("div",{class:"tbox"},h("div",{class:"trow"},h("b",{},"Mo–Fr"),h("span",{},"16:00–21:30")),h("div",{class:"trow"},h("b",{},"Sa, So"),h("span",{},"12:00–21:30"))),
     h("div",{class:"hint",style:"margin-top:6px"},"Treffpunkt ist zu Schichtbeginn im Lager in der Plankgasse 42. Um 21:30 Klappe zu und Stand fertig machen, Feierabend am Stand ca. 22:00. Wer fährt, ist nach der Plankgasse ca. 22:30 fertig.")));
@@ -694,7 +704,7 @@ function renderPlan(){
     const day=S.shifts[d]; const blocks=[];
     for(const hut of Object.keys(HUTS)){ const ps=(day[hut]||[]).filter(p=>!me||p.name===me); if(ps.length) blocks.push(h("h3",{},HUTS[hut].name),h("div",{class:"list"},ps.map(p=>personRow(p)))); }
     if(!blocks.length) continue;
-    frag.append(h("div",{class:"card"},h("b",{},parseD(d).toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long"})+(d===todayStr()?" · heute":"")),timesBox(d,true),blocks));
+    frag.append(h("div",{class:"card"},h("b",{},parseD(d).toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long"})+(d===todayStr()?" · heute":"")),timesBox(d,true),me?null:leadLine(d),blocks));
   }
   return frag;
 }
@@ -830,7 +840,7 @@ function renderSub(){
     frag.append(section("team","Team & Telefonnummern",null,renderTeamEdit,false));
     frag.append(section("leads","Leads",h("span",{class:"hint"},leadsList().join(", ")),()=>{
       const names=[...new Set([...leadsList(),...Object.keys((S.team&&S.team.people)||{}),...Object.values(S.shifts).flatMap(d=>[...(d.og||[]),...(d.mm||[])].filter(p=>!p.open).map(p=>p.name))])].sort((a,b)=>a.localeCompare(b,"de"));
-      return [h("div",{class:"hint"},"Wer hier markiert ist, ist automatisch Lead, sobald er oder sie in der Schicht steht. Der Lead kümmert sich abends um Terminals und Bargeld."),
+      return [h("div",{class:"hint"},"Wer hier markiert ist, ist automatisch Lead, sobald er oder sie in der Schicht steht. Lead heißt: darf das Auto fahren und ist für die Fahrten verantwortlich. Pro Tag sollte mindestens ein Lead eingeteilt sein."),
         h("div",{class:"chips"},names.map(n=>{const on=isLead(n); return h("button",{class:"chip"+(on?" on":""),onclick:()=>{const l=on?leadsList().filter(x=>x.toLowerCase()!==n.toLowerCase()):[...leadsList(),n]; writeDoc("config/main",{leads:l});}},n);}))];
     },false));
     frag.append(section("extras","Auswahl „Extra mitbringen“",null,()=>{
