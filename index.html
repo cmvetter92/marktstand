@@ -155,8 +155,17 @@ input.num-in.bad{border-color:var(--danger);background:#fdf0ee;outline-color:var
 .helpsheet{background:var(--card);width:100%;max-width:640px;max-height:88vh;overflow:auto;border-radius:16px 16px 0 0;padding:16px 18px calc(24px + env(safe-area-inset-bottom))}
 .helphead{display:flex;align-items:center;gap:10px;position:sticky;top:-16px;background:var(--card);padding:4px 0 8px}.helphead h2{margin:0;flex:1;font-size:20px}
 .helpx{width:36px;height:36px;border-radius:50%;background:var(--bg);font-size:16px}
-.helpsec{border-top:1px solid var(--line);padding:10px 0}.helpsec.first{border-top:0;background:#eaf3ee;border-radius:10px;padding:10px 12px;margin-bottom:6px}.helpsec b{font-size:16px}.helpsec p{margin:4px 0 0;font-size:15px;line-height:1.5}
+.hwhy{background:#eaf3ee;border-radius:12px;padding:12px 14px}.hwhy b{font-size:16px}.hwhy p{margin:4px 0 0;font-size:15px;line-height:1.45}
+.hsub{font-size:13px;font-weight:700;color:var(--muted);margin:16px 0 6px}
+.hsteps{list-style:none;margin:0;padding:0}.hsteps li,.hcard{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}.hsteps li:first-child{border-top:0}
+.hcard{border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.hn{flex:none;width:28px;height:28px;border-radius:50%;background:#2f6b4f;color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:15px}
+.hsteps li.key{background:#fdf6e3;border-radius:10px;padding:10px 8px;border-top:0;margin:4px -8px}.hsteps li.key .hn{background:#b7791f}
+.hbody{flex:1;min-width:0;font-size:14px;line-height:1.4}.hbody b{font-size:16px}.hbody small{color:var(--muted);font-size:13px}.hbody>span{display:block;color:var(--ink)}
+.hgo{flex:none;font-size:14px;font-weight:700;color:#2f6b4f;padding:6px 2px}
+.hfacts{list-style:none;margin:0;padding:0;font-size:14px;line-height:1.45}.hfacts li{padding:4px 0}.hfacts b{margin-right:6px}
 #app{padding-bottom:80px}
+.step{scroll-margin-top:150px}
 .pen{font-size:12px;color:var(--muted);margin-left:4px;display:inline-block}
 .subhead{font-weight:700;font-size:14px;padding:6px 0 4px}
 .stepper{display:flex;align-items:center;gap:6px}
@@ -237,19 +246,20 @@ const NACHT = [
   "Ware über Nacht versorgt (siehe oben)",
   "Brot ins Auto, auch wenn es kalt genug ist",
   "SumUp-Terminal an den Lead, Bargeld und Zettel in den Umschlag (Plankgasse)",
-  "Graue Geschirrbox mit in die Küche",
+  "Graue Geschirrbox und leere Kisten mit in die Küche",
   "Hütte zum Schluss mit Kabelbindern verschlossen"
 ];
 const DEFAULT_EXTRAS = ["Feuerlöscher","GN 1/2","Deckel GN 1/2","GN 1/6","Squeeze-Flasche","Servietten","Essensschalen","Soßenbehälter","Küchentücher","Mülltüten","Blaue Rolle"];
 const COLD_LIMIT = 7;
 function coldRule(hut,low){
   const cold=low!=null&&low<=COLD_LIMIT;
-  if(low==null) return hut==="mm"?"Bis 7 °C bleibt die Ware in der Hütte, sonst in die Kühltruhe hinter dem Apple-Crumble-Stand.":"Bis 7 °C bleibt die Ware in der Hütte, sonst in den Kühlschrank, Rest mit in die Küche.";
-  if(cold) return "Die Ware kann in der Hütte bleiben, das Brot kommt trotzdem ins Auto.";
-  return hut==="mm"?"Ware in die Kühltruhe hinter dem Apple-Crumble-Stand.":"Ware in den Kühlschrank, was nicht reinpasst, mit in die Küche.";
+  const warm=hut==="mm"?"Kühlware in die Kühltruhe hinter dem Apple-Crumble-Stand.":"Kühlware in den Kühlschrank, was nicht reinpasst, mit in die Küche.";
+  if(low==null) return "Bis 7 °C bleibt die Ware in der Hütte. Wärmer: "+warm;
+  if(cold) return "Kalt genug, die Ware bleibt in der Hütte. Mit ins Auto: Brot, Geschirr und leere Kisten.";
+  return "Zu warm für die Hütte: "+warm;
 }
 // Extras: Einträge "gear:<key>" verweisen auf den Equipment-Katalog, alles andere ist freier Verbrauchsartikel
-function coldShort(hut,low){ if(low==null) return "Kühlregel siehe Schritt 4"; if(low<=COLD_LIMIT) return "Darf in der Hütte bleiben"; return hut==="mm"?"In die Kühltruhe hinter Apple Crumble":"In den Kühlschrank, Rest in die Küche"; }
+function coldShort(hut,low){ if(low==null) return "Kühlregel siehe Schritt 4"; if(low<=COLD_LIMIT) return "Bleibt in der Hütte"; return hut==="mm"?"In die Kühltruhe hinter Apple Crumble":"In den Kühlschrank, Rest in die Küche"; }
 function extrasRaw(){ const e=S.config.extras; return Array.isArray(e)?e:DEFAULT_EXTRAS; }
 function exName(id){ return String(id).startsWith("gear:")?gearName(String(id).slice(5)):String(id); }
 function extrasList(){ return extrasRaw().map(id=>({id,name:exName(id),key:ekey(String(id))})); }
@@ -1035,26 +1045,44 @@ async function fetchWeather(){
 }
 setTimeout(fetchWeather,4000); setInterval(fetchWeather,30*60*1000);
 /* ---------- Hilfe: schwebender ?-Knopf mit Erklärung ---------- */
-const HELP=[
- ["Wozu die App?","Das Wichtigste passiert am Ende des Tages: Jede Hütte zählt, was noch da ist. Am nächsten Tag arbeitet oft eine andere Schicht. Durch die Zählung weiß sie, was sie aus dem Lager mitnehmen muss, damit es für den ganzen Tag reicht. Wird abends nicht gezählt, rät die nächste Schicht, und dann fehlt Ware oder es wird zu viel geschleppt."],
- ["Der Tag in 5 Schritten","1 Packen im Lager in der Plankgasse · 2 Aufbau am Stand · 3 Schließen und putzen · 4 Bestand zählen · 5 Feierabend. Der jeweils nächste Schritt klappt von selbst auf. Oben bei „Team“ siehst du, wer heute arbeitet, wer Lead ist und die Zeiten."],
- ["Packen","Die Zahl rechts ist schon die Menge, die mit soll. Nimmst du mehr oder weniger mit, mit − und + anpassen, dann abhaken. Ist im Lager nichts mehr da, auf 0 stellen und trotzdem abhaken, die App merkt sich, dass es fehlt."],
- ["Abends zählen","Mit − und + eintragen, was übrig ist. Nur volle Packungen zählen, Angebrochenes nicht. Das Brot mitzählen, es kommt danach trotzdem ins Auto. Fehlt morgen etwas extra (Servietten, Folie, Senf …), unten antippen. Eine Notiz für die nächste Schicht geht auch."],
- ["Lager","Das Lager zeigt, was morgen leer ist und was knapp wird. Produkt antippen, dann: Eingang (Lieferung), Entnahme (z. B. Catering), TK → Kühlung, Zählen. Wichtig: Wer etwas aus dem Tiefkühler in die Kühlung räumt, bucht das in der App um. Sonst stimmt der Bestand nicht und die Packliste rechnet falsch."],
- ["Lead","Der Lead darf das Auto fahren und macht alle Fahrten: Ware zum Stand, abends zurück, zwischendurch Nachschub. Er nimmt abends die SumUp-Terminals mit."],
- ["Bargeld","Wir sind cashless. Bar nur im Notfall und nur passend, Wechselgeld gibt es nicht. Jede Barzahlung auf den Zettel."],
- ["Tipps","App aufs Handy legen: im Browser „Zum Startbildschirm hinzufügen“. Ohne Netz kannst du weiter eintragen, es wird gespeichert, sobald wieder Netz da ist. Oben mit ‹ › blätterst du die Tage, „Zu heute“ springt zurück."]
+const HELP_STEPS=[
+  ["Packen","Plankgasse 42","Menge mit − + prüfen, dann abhaken. Nichts da? Auf 0 und abhaken."],
+  ["Aufbau","am Stand","Drei Haken. Anleitung zum Aufklappen."],
+  ["Schließen & putzen","21:30","Klappe zu, Putzplan abhaken."],
+  ["Bestand zählen","das Wichtigste","Was übrig ist mit − +. Nur volle Packungen, Brot mitzählen. Extras für morgen antippen."],
+  ["Feierabend","","Brot, Geschirr, leere Kisten ins Auto. Hütte mit Kabelbindern zu."]
 ];
+function closeHelp(){ const ov=document.getElementById("helpov"); if(ov) ov.remove(); document.body.style.overflow=""; }
+function jumpTo(target){
+  closeHelp(); ui.plan=false; ui.sub=null; ui.date=todayStr();
+  if(target==="lager"){ ui.tab="lager"; render(); window.scrollTo(0,0); return; }
+  const hut=ui.tab==="lager"?"og":ui.tab; ui.tab=hut;
+  const st=stepState(hut,ui.date); const done=[st.packDone,st.aufDone,st.closeDone,st.bestDone,st.closed][target];
+  ui.open[hut+":"+ui.date+":"+target]={v:true,done};
+  render();
+  const el=document.getElementById("step-"+target); if(el) el.scrollIntoView({behavior:"smooth",block:"start"});
+}
 function openHelp(){
-  let ov=document.getElementById("helpov");
-  if(!ov){
-    ov=h("div",{id:"helpov",role:"dialog","aria-modal":"true","aria-label":"So funktioniert die App"},
-      h("div",{class:"helpsheet"},
-        h("div",{class:"helphead"},h("h2",{},"So funktioniert die App"),h("button",{class:"helpx","aria-label":"Schließen",onclick:()=>{ov.remove();document.body.style.overflow="";}},"✕")),
-        HELP.map(([t,x],i)=>h("div",{class:"helpsec"+(i===0?" first":"")},h("b",{},t),h("p",{},x)))));
-    ov.addEventListener("click",e=>{ if(e.target===ov){ ov.remove(); document.body.style.overflow=""; } });
-    document.body.append(ov); document.body.style.overflow="hidden";
-  }
+  if(document.getElementById("helpov")) return;
+  const link=(t,label)=>h("button",{class:"hgo",onclick:()=>jumpTo(t)},label||"Zeigen ›");
+  const ov=h("div",{id:"helpov",role:"dialog","aria-modal":"true","aria-label":"So funktioniert die App"},
+    h("div",{class:"helpsheet"},
+      h("div",{class:"helphead"},h("h2",{},"So funktioniert die App"),h("button",{class:"helpx","aria-label":"Schließen",onclick:closeHelp},"✕")),
+      h("div",{class:"hwhy"},h("b",{},"Warum?"),h("p",{},"Abends zählen, was übrig ist. So weiß die nächste Schicht, was sie aus dem Lager mitnehmen muss, damit es für den Tag reicht.")),
+      h("div",{class:"hsub"},"Jede Hütte, jeden Tag: 5 Schritte"),
+      h("ol",{class:"hsteps"},HELP_STEPS.map(([t,m,x],i)=>h("li",{class:i===3?"key":""},
+        h("span",{class:"hn"},String(i+1)),
+        h("span",{class:"hbody"},h("b",{},t),m?h("small",{}," · "+m):null,h("span",{},x)),
+        link(i)))),
+      h("div",{class:"hsub"},"Lager"),
+      h("div",{class:"hcard"},h("span",{class:"hbody"},h("b",{},"Tiefkühler → Kühlung umräumen?"),h("span",{},"Immer in der App umbuchen, sonst rechnet die Packliste falsch.")),link("lager")),
+      h("div",{class:"hsub"},"Gut zu wissen"),
+      h("ul",{class:"hfacts"},
+        h("li",{},h("b",{},"Lead"),"fährt das Auto und nimmt die SumUp-Terminals mit."),
+        h("li",{},h("b",{},"Cashless"),"bar nur im Notfall und passend, auf den Zettel."),
+        h("li",{},h("b",{},"Kein Netz?"),"Einfach weiter eintragen, es wird später gespeichert."))));
+  ov.addEventListener("click",e=>{ if(e.target===ov) closeHelp(); });
+  document.body.append(ov); document.body.style.overflow="hidden";
 }
 document.body.append(h("button",{id:"helpfab","aria-label":"Hilfe: So funktioniert die App",onclick:openHelp},"?"));
 try{ if(!localStorage.getItem("helpSeen")){ localStorage.setItem("helpSeen","1"); setTimeout(openHelp,600); } }catch(e){}
