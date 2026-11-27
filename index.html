@@ -117,6 +117,7 @@ input.num-in.bad{border-color:var(--danger);background:#fdf0ee;outline-color:var
 .sbtn[disabled]{opacity:.35}
 .sval{min-width:30px;text-align:center;font-weight:700;font-size:18px}
 .stepper.on .sval{color:var(--muted)}
+.stepper.unset .sval{color:#b0b0b0}
 .check.on .lbl .warn{display:inline-block;text-decoration:none}
 .phone{flex:none;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-size:14px}
 .phone a{color:inherit;text-decoration:none;white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -589,25 +590,20 @@ function renderHut(hut){
     list.append(h("div",{class:"hint",style:"margin:0 0 6px"},"Alles zählen, was übrig ist, auch das Brot. Nur volle Packungen, Angebrochenes zählt nicht."));
     for(const it of items){
       const v=doc.bestand?doc.bestand[it.key]:null;
-      list.append(h("div",{class:"row"},
-        h("span",{class:"lbl"},it.name,h("span",{class:"sub quiet"},`${it.unit} · Soll morgen ${fmt(sollOf(it,hut,addDays(date,1)))}`),it.supplier==="baecker"?h("span",{class:"sub quiet"},"Mitzählen, kommt danach immer ins Auto"):null),
-        numInput(it.name+" Bestand",v,n=>patchDay(hut,date,{bestand:{[it.key]:n}}))));
+      // Plus/Minus wie beim Packen. Noch nicht gezählt = „–“; erster Tipp auf − setzt 0, auf + setzt 1.
+      const has=v!=null&&v!=="";
+      const setB=n=>patchDay(hut,date,{bestand:{[it.key]:Math.max(0,Math.round(n*10)/10)}});
+      list.append(h("div",{class:"pack-row"},
+        h("span",{class:"lbl",style:"flex:1;min-width:0"},it.name,h("span",{class:"sub quiet"},`${it.unit} · Soll morgen ${fmt(sollOf(it,hut,addDays(date,1)))}`),it.supplier==="baecker"?h("span",{class:"sub quiet"},"Mitzählen, kommt danach immer ins Auto"):null),
+        h("div",{class:"stepper"+(has?"":" unset")},
+          h("button",{class:"sbtn","aria-label":it.name+" weniger",disabled:has&&Number(v)<=0?"":null,onclick:()=>setB(has?Number(v)-1:0)},"−"),
+          h("span",{class:"sval"},has?fmt(Number(v)):"–"),
+          h("button",{class:"sbtn","aria-label":it.name+" mehr",onclick:()=>setB(has?Number(v)+1:1)},"+"))));
       if(implausible(it,hut,doc)) list.append(h("div",{class:"oddmsg"},
         `${fmt(v)} ${it.unit} ist ungewöhnlich viel. Tippfehler?`,
         h("button",{class:"link",onclick:()=>patchDay(hut,date,{bestandOk:{[it.key]:v}})},"Stimmt so")));
     }
     out.push(list);
-    // Equipment, das am Stand bleibt
-    const eq=eqList(hut).filter(e=>canStay(e.name)); const stay=doc.stay||{};
-    if(eq.length){
-      const setSt=(e,v)=>patchDay(hut,date,{stay:{[e.key]:Math.max(0,Math.min(e.qty,v))}});
-      const chosenSt=eq.filter(e=>(Number(stay[e.key])||0)>0);
-      out.push(h("div",{class:"subhead",style:"margin-top:18px"},"Equipment, das am Stand bleibt",h("span",{class:"hint",style:"font-weight:400"}," · optional")));
-      out.push(h("div",{class:"hint"},"Z. B. GN mit Ware drin. Alles andere kommt sowieso mit in die Küche."));
-      out.push(h("div",{class:"chips"},eq.map(e=>{const v=Number(stay[e.key])||0; return h("button",{class:"chip"+(v>0?" on":""),disabled:v>=e.qty,onclick:()=>setSt(e,v+1)},v>0?`${e.name} × ${v}`:e.name);})));
-      if(chosenSt.length) out.push(h("div",{class:"list",style:"margin-top:6px"},chosenSt.map(e=>{const v=Number(stay[e.key])||0; return h("div",{class:"row"},h("span",{class:"lbl"},eqLabel(e.name,`von ${e.qty}`)),
-        h("div",{class:"stepper"},h("button",{"aria-label":"weniger",onclick:()=>setSt(e,v-1)},"−"),h("span",{},String(v)),h("button",{"aria-label":"mehr",disabled:v>=e.qty,onclick:()=>setSt(e,v+1)},"+")));})));
-    }
     // Extras für morgen
     const ex=doc.extras||{};
     const chosen=Object.entries(ex).filter(([,e])=>e&&e.qty>0).map(([k,e])=>({key:k,id:e.ref||e.name,name:e.ref?exName(e.ref):e.name,qty:e.qty}));
