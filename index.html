@@ -593,7 +593,7 @@ function renderHut(hut){
       // Plus/Minus wie beim Packen. Noch nicht gezählt = „–“; erster Tipp auf − setzt 0, auf + setzt 1.
       const has=v!=null&&v!=="";
       const setB=n=>patchDay(hut,date,{bestand:{[it.key]:Math.max(0,Math.round(n*10)/10)}});
-      list.append(h("div",{class:"pack-row"},
+      list.append(h("div",{class:"pack-row",style:"padding:8px 0"},
         h("span",{class:"lbl",style:"flex:1;min-width:0"},it.name,h("span",{class:"sub quiet"},`${it.unit} · Soll morgen ${fmt(sollOf(it,hut,addDays(date,1)))}`),it.supplier==="baecker"?h("span",{class:"sub quiet"},"Mitzählen, kommt danach immer ins Auto"):null),
         h("div",{class:"stepper"+(has?"":" unset")},
           h("button",{class:"sbtn","aria-label":it.name+" weniger",disabled:has&&Number(v)<=0?"":null,onclick:()=>setB(has?Number(v)-1:0)},"−"),
