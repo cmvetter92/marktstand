@@ -150,6 +150,13 @@ input.num-in.bad{border-color:var(--danger);background:#fdf0ee;outline-color:var
 .tbox{margin:8px 0 4px;border-top:1px solid var(--line);padding-top:6px}.trow{display:flex;gap:10px;padding:3px 0;font-size:14px}.trow b{flex:none;min-width:70px;font-variant-numeric:tabular-nums}
 .tcompact{font-size:13px;color:var(--muted);margin:2px 0 4px}
 .leadline{font-size:14px;margin:2px 0 0;display:flex;align-items:center;gap:6px;flex-wrap:wrap}.leadline .tag{margin:0}.leadline.none{color:var(--warn)}
+#helpfab{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));width:48px;height:48px;border-radius:50%;background:#2f6b4f;color:#fff;font-size:24px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.25);z-index:40}
+#helpov{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:flex;align-items:flex-end;justify-content:center}
+.helpsheet{background:var(--card);width:100%;max-width:640px;max-height:88vh;overflow:auto;border-radius:16px 16px 0 0;padding:16px 18px calc(24px + env(safe-area-inset-bottom))}
+.helphead{display:flex;align-items:center;gap:10px;position:sticky;top:-16px;background:var(--card);padding:4px 0 8px}.helphead h2{margin:0;flex:1;font-size:20px}
+.helpx{width:36px;height:36px;border-radius:50%;background:var(--bg);font-size:16px}
+.helpsec{border-top:1px solid var(--line);padding:10px 0}.helpsec.first{border-top:0;background:#eaf3ee;border-radius:10px;padding:10px 12px;margin-bottom:6px}.helpsec b{font-size:16px}.helpsec p{margin:4px 0 0;font-size:15px;line-height:1.5}
+#app{padding-bottom:80px}
 .pen{font-size:12px;color:var(--muted);margin-left:4px;display:inline-block}
 .subhead{font-weight:700;font-size:14px;padding:6px 0 4px}
 .stepper{display:flex;align-items:center;gap:6px}
@@ -229,7 +236,7 @@ const SCHLIESSEN = [
 const NACHT = [
   "Ware über Nacht versorgt (siehe oben)",
   "Brot ins Auto, auch wenn es kalt genug ist",
-  "SumUp-Terminal, Bargeld und Zettel an den Lead",
+  "SumUp-Terminal an den Lead, Bargeld und Zettel in den Umschlag (Plankgasse)",
   "Graue Geschirrbox mit in die Küche",
   "Hütte zum Schluss mit Kabelbindern verschlossen"
 ];
@@ -352,7 +359,6 @@ function packList(hut,date){
 function missingSoll(it){ return Object.values(it.soll||{}).some(s=>s&&(s.wt==null||s.wt===""||s.we==null||s.we==="")); }
 function bestandLimit(item,hut){ const s=item.soll&&item.soll[hut]; if(!s) return 0; return Math.max(Number(s.wt)||0,Number(s.we)||0)*2; }
 function implausible(item,hut,doc){ const v=doc.bestand&&doc.bestand[item.key]; if(v==null) return false; const lim=bestandLimit(item,hut); return lim>0&&v>lim&&!(doc.bestandOk&&doc.bestandOk[item.key]===v); }
-function overdue(o){ return o.status==="open"&&o.date&&o.date<addDays(todayStr(),-1); }
 function packedQty(hut,date,key){ const p=dayDoc(hut,date).pack; const e=p&&p[key]; return e&&Number(e.qty)>0?Number(e.qty):0; }
 function isPacked(hut,date,key){ const p=dayDoc(hut,date).pack; const e=p&&p[key]; return !!e&&(e.done===true||(e.done!==false&&Number(e.qty)>0)); }
 // Vorschlag zum Mitnehmen: Soll-Bedarf, aber nicht mehr als laut Lager da ist (nur wenn das Lager gezählt wurde)
@@ -453,7 +459,7 @@ function render(){
   else if(!S.ready) app.append(h("div",{class:"banner ok"},"Lade Daten …"));
   else if(S.slow) app.append(h("div",{class:"banner"},"Kein Netz? Du siehst den zuletzt geladenen Stand. Einträge werden gespeichert, sobald wieder Netz da ist."));
   if(failed.length) app.append(h("div",{class:"banner bad"},`${failed.length} Eingabe${failed.length===1?"":"n"} nicht gespeichert, vermutlich kein Netz. `,h("button",{class:"link",onclick:retryFailed},"Nochmal senden")));
-  if(noRights) app.append(h("div",{class:"banner bad"},"Du kannst hier nur lesen. Bitte beim Chef Schreibrechte (Contributor) holen."));
+  if(noRights) app.append(h("div",{class:"banner bad"},"Speichern nicht erlaubt. Bitte die App einmal über den Team-Link neu öffnen."));
   if(!ui.sub&&!ui.plan&&ui.tab!=="lager"&&ui.date!==todayStr()){
     const past=ui.date<todayStr();
     app.append(h("div",{class:"banner"},h("b",{},past?"Achtung, das ist ein vergangener Tag. ":"Achtung, das ist ein Tag in der Zukunft. "),"Einträge landen bei diesem Datum. ",h("button",{class:"link",onclick:()=>{ui.date=todayStr();render();}},"Zu heute")));
@@ -622,15 +628,15 @@ function renderHut(hut){
   },`${st.filled} von ${st.total} gezählt`+(st.doc.extras&&Object.values(st.doc.extras).some(e=>e&&e.qty>0)?", Extras bestellt":"")));
 
   // 5 Feierabend: nur noch Handgriffe vor dem Gehen
-  frag.append(step(4,"Feierabend","Ware versorgen, Kasse zum Lead",st.closed,activeIdx===4,()=>{
+  frag.append(step(4,"Feierabend","Ware versorgen, Hütte zu",st.closed,activeIdx===4,()=>{
     const w=S.weather[date]; const low=w&&w.low!=null?Number(w.low):null;
     const list=h("div",{class:"list"});
     NACHT.forEach((t,i)=>{ const on=!!(doc.nacht&&doc.nacht["c"+i]); const label=i===0?h("span",{},"Ware über Nacht versorgt",h("span",{class:"sub quiet"},coldShort(hut,low))):t; list.append(checkRow(on,label,()=>patchDay(hut,date,{nacht:{["c"+i]:!on}}))); });
     const lead=leadOf(date);
     const ok=st.bestDone&&st.nightDone;
     return [
-      h("div",{class:"kasse",style:"margin:0 0 10px"},lead?[h("b",{},lead.name)," ist heute Lead für beide Hütten"+(lead.hut!==hut?` (steht bei ${HUTS[lead.hut].short})`:"")+": zählt das Bargeld gegen den Zettel und nimmt Terminals und Bargeld mit in die Küche."]
-        :[h("b",{style:"color:var(--warn)"},"Heute ist kein Lead in der Schicht. "),"Bitte im Team klären, wer Terminals und Bargeld mitnimmt."]),
+      h("div",{class:"kasse",style:"margin:0 0 10px"},lead?[h("b",{},lead.name)," ist heute Lead für beide Hütten"+(lead.hut!==hut?` (steht bei ${HUTS[lead.hut].short})`:"")+": nimmt die SumUp-Terminals mit und fährt die Ware zurück. Bargeld zählen Christian oder Serhat, tragen es ein und legen es in den Umschlag in der Plankgasse."]
+        :[h("b",{style:"color:var(--warn)"},"Heute ist kein Lead in der Schicht. "),"Bitte klären, wer fährt und die Terminals mitnimmt."]),
       list,
       ok?null:h("div",{class:"note",style:"margin-top:10px"},!st.bestDone?"Erst Schritt 4 abschließen.":"Noch nicht alle Haken gesetzt."),
       h("button",{class:"btn",disabled:!ok,onclick:()=>{ Object.keys(ui.open).forEach(k=>{ if(k.startsWith(hut+":"+date+":")) delete ui.open[k]; }); window.scrollTo(0,0); patchDay(hut,date,{closed:true,closedAt:nowISO()}); }},"Tag für "+HUTS[hut].short+" beenden")
@@ -851,7 +857,7 @@ function renderSub(){
         h("div",{class:"row"},h("input",{class:"txt",type:"text",placeholder:"z. B. Alufolie",oninput:e=>nw=e.target.value}),
           h("button",{class:"btn small",onclick:()=>{const t=nw.trim(); if(!t) return; const g=Object.entries(S.gear).find(([,x])=>String(x.name).toLowerCase()===t.toLowerCase()); ex.push(g?"gear:"+g[0]:t); save();}},"Hinzufügen"))];
     },false));
-    frag.append(section("wochenende","Was zählt als Wochenende?",h("span",{class:"hint"},weekendDays().map(d=>WD[d]).join(", ")),()=>[
+    frag.append(section("wochenende","Wochenend-Soll gilt an",h("span",{class:"hint"},weekendDays().map(d=>WD[d]).join(", ")),()=>[
       h("div",{class:"hint"},"An diesen Tagen gelten die Wochenend-Mengen."),
       h("div",{class:"chips"},[1,2,3,4,5,6,0].map(d=>{const on=weekendDays().includes(d);
         return h("button",{class:"chip"+(on?" on":""),onclick:()=>{const w=on?weekendDays().filter(x=>x!==d):[...weekendDays(),d]; writeDoc("config/main",{weekendDays:w});}},WD[d]);}))
@@ -1028,6 +1034,30 @@ async function fetchWeather(){
   }catch(e){ console.warn("Wetter nicht abrufbar",e); }
 }
 setTimeout(fetchWeather,4000); setInterval(fetchWeather,30*60*1000);
+/* ---------- Hilfe: schwebender ?-Knopf mit Erklärung ---------- */
+const HELP=[
+ ["Wozu die App?","Das Wichtigste passiert am Ende des Tages: Jede Hütte zählt, was noch da ist. Am nächsten Tag arbeitet oft eine andere Schicht. Durch die Zählung weiß sie, was sie aus dem Lager mitnehmen muss, damit es für den ganzen Tag reicht. Wird abends nicht gezählt, rät die nächste Schicht, und dann fehlt Ware oder es wird zu viel geschleppt."],
+ ["Der Tag in 5 Schritten","1 Packen im Lager in der Plankgasse · 2 Aufbau am Stand · 3 Schließen und putzen · 4 Bestand zählen · 5 Feierabend. Der jeweils nächste Schritt klappt von selbst auf. Oben bei „Team“ siehst du, wer heute arbeitet, wer Lead ist und die Zeiten."],
+ ["Packen","Die Zahl rechts ist schon die Menge, die mit soll. Nimmst du mehr oder weniger mit, mit − und + anpassen, dann abhaken. Ist im Lager nichts mehr da, auf 0 stellen und trotzdem abhaken, die App merkt sich, dass es fehlt."],
+ ["Abends zählen","Mit − und + eintragen, was übrig ist. Nur volle Packungen zählen, Angebrochenes nicht. Das Brot mitzählen, es kommt danach trotzdem ins Auto. Fehlt morgen etwas extra (Servietten, Folie, Senf …), unten antippen. Eine Notiz für die nächste Schicht geht auch."],
+ ["Lager","Das Lager zeigt, was morgen leer ist und was knapp wird. Produkt antippen, dann: Eingang (Lieferung), Entnahme (z. B. Catering), TK → Kühlung, Zählen. Wichtig: Wer etwas aus dem Tiefkühler in die Kühlung räumt, bucht das in der App um. Sonst stimmt der Bestand nicht und die Packliste rechnet falsch."],
+ ["Lead","Der Lead darf das Auto fahren und macht alle Fahrten: Ware zum Stand, abends zurück, zwischendurch Nachschub. Er nimmt abends die SumUp-Terminals mit."],
+ ["Bargeld","Wir sind cashless. Bar nur im Notfall und nur passend, Wechselgeld gibt es nicht. Jede Barzahlung auf den Zettel."],
+ ["Tipps","App aufs Handy legen: im Browser „Zum Startbildschirm hinzufügen“. Ohne Netz kannst du weiter eintragen, es wird gespeichert, sobald wieder Netz da ist. Oben mit ‹ › blätterst du die Tage, „Zu heute“ springt zurück."]
+];
+function openHelp(){
+  let ov=document.getElementById("helpov");
+  if(!ov){
+    ov=h("div",{id:"helpov",role:"dialog","aria-modal":"true","aria-label":"So funktioniert die App"},
+      h("div",{class:"helpsheet"},
+        h("div",{class:"helphead"},h("h2",{},"So funktioniert die App"),h("button",{class:"helpx","aria-label":"Schließen",onclick:()=>{ov.remove();document.body.style.overflow="";}},"✕")),
+        HELP.map(([t,x],i)=>h("div",{class:"helpsec"+(i===0?" first":"")},h("b",{},t),h("p",{},x)))));
+    ov.addEventListener("click",e=>{ if(e.target===ov){ ov.remove(); document.body.style.overflow=""; } });
+    document.body.append(ov); document.body.style.overflow="hidden";
+  }
+}
+document.body.append(h("button",{id:"helpfab","aria-label":"Hilfe: So funktioniert die App",onclick:openHelp},"?"));
+try{ if(!localStorage.getItem("helpSeen")){ localStorage.setItem("helpSeen","1"); setTimeout(openHelp,600); } }catch(e){}
 if("serviceWorker" in navigator){ window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{})); }
 </script>
 </body>
